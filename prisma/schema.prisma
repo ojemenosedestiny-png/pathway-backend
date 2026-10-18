@@ -1,0 +1,502 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "mongodb"
+ url = env("DATABASE_URL")
+}
+enum UserRole {
+ STUDENT
+ ADMIN
+}
+enum UserStatus {
+ ACTIVE
+ SUSPENDED
+ DELETED
+}
+enum AdminRole {
+ SUPER_ADMIN
+ ADMISSIONS
+ FINANCE
+ HOSTEL
+ CONTENT
+}
+enum PaymentStatus {
+ PENDING
+ SUCCESS
+ FAILED
+ ABANDONED
+ REFUNDED
+}
+enum Provider {
+ PAYSTACK
+ FLUTTERWAVE
+ STRIPE
+ BANK
+}
+enum PaymentPurpose {
+ REGISTRATION
+ ENROLMENT
+ TUITION
+ EXAM
+ HOSTEL
+ INSTALMENT
+}
+enum PostStatus {
+ DRAFT
+ SCHEDULED
+ PUBLISHED
+ ARCHIVED
+}
+model User {
+ id String @id @default(uuid()) @map("_id")
+ role UserRole
+ email String @unique
+ phone String
+ passwordHash String?
+ status UserStatus @default(ACTIVE)
+ twoFactorSecret String?
+ lastTotpStep BigInt @default(0)
+ backupCodes String[] @default([])
+ failedLoginCount Int @default(0)
+ lockedUntil DateTime?
+ mustChangePassword Boolean @default(true)
+ sessionVersion Int @default(1)
+ createdAt DateTime @default(now())
+ student Student?
+ admin Admin?
+ sessions Session[]
+ tokens PasswordToken[]
+ challenges AuthChallenge[]
+ documents Document[]
+ notifications Notification[]
+ reads AnnouncementRead[]
+ messages Message[]
+}
+model Student {
+ id String @id @default(uuid()) @map("_id")
+ userId String @unique
+ user User @relation(fields:[userId],references:[id])
+ studentId String @unique
+ firstName String
+ lastName String
+ dob DateTime?
+ nationality String?
+ countryOfResidence String?
+ guardian Json @default("{}")
+ cohort String?
+ journeyStage String @default("Registered")
+ milestones Json @default("[]")
+ createdAt DateTime @default(now())
+ applications Application[]
+ enrolments ExamEnrolment[]
+ payments Payment[]
+ bookings HostelBooking[]
+ consultations ConsultationBooking[]
+ threads Thread[]
+}
+model Admin {
+ userId String @id @map("_id")
+ user User @relation(fields:[userId],references:[id])
+ name String
+ roleType AdminRole
+ permissions Json @default("{}")
+}
+model RolePermission {
+ id String @id @default(uuid()) @map("_id")
+ role AdminRole @unique
+ permissions Json
+}
+model Session {
+ id String @id @default(uuid()) @map("_id")
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ refreshHash String @unique
+ previousRefreshHash String? @unique
+ version Int
+ csrfSecret String
+ createdAt DateTime @default(now())
+ lastSeen DateTime @default(now())
+ expiresAt DateTime
+ mfaAt DateTime?
+ @@index([userId,expiresAt])
+}
+model PasswordToken {
+ id String @id @default(uuid()) @map("_id")
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ hash String @unique
+ kind String
+ expiresAt DateTime
+ usedAt DateTime?
+}
+model AuthChallenge {
+ id String @id @default(uuid()) @map("_id")
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ hash String @unique
+ version Int
+ encryptedSecret String?
+ expiresAt DateTime
+ attempts Int @default(0)
+ usedAt DateTime?
+}
+model Country {
+ id String @id @default(uuid()) @map("_id")
+ name String @unique
+ code String @unique
+ featured Boolean @default(false)
+ universities University[]
+}
+model University {
+ id String @id @default(uuid()) @map("_id")
+ countryId String
+ country Country @relation(fields:[countryId],references:[id])
+ name String
+ description String
+ entryRequirements Json @default("{}")
+ tuitionMinor BigInt @default(0)
+ currency String @default("USD")
+ deadline DateTime?
+ featured Boolean @default(false)
+ active Boolean @default(true)
+ logo String?
+ image String?
+ courses Course[]
+ applications Application[]
+}
+model Course {
+ id String @id @default(uuid()) @map("_id")
+ universityId String
+ university University @relation(fields:[universityId],references:[id])
+ name String
+ requirements Json @default("{}")
+ tuitionMinor BigInt @default(0)
+ currency String @default("USD")
+ deadline DateTime?
+ active Boolean @default(true)
+ applications Application[]
+}
+model Application {
+ id String @id @default(uuid()) @map("_id")
+ studentId String
+ student Student @relation(fields:[studentId],references:[id])
+ universityId String
+ university University @relation(fields:[universityId],references:[id])
+ courseId String
+ course Course @relation(fields:[courseId],references:[id])
+ status String @default("DRAFT")
+ notes String @default("")
+ assignedTo String?
+ createdAt DateTime @default(now())
+ history ApplicationStatusHistory[]
+ @@index([studentId,status])
+}
+model ApplicationStatusHistory {
+ id String @id @default(uuid()) @map("_id")
+ applicationId String
+ application Application @relation(fields:[applicationId],references:[id])
+ status String
+ comment String
+ changedBy String
+ at DateTime @default(now())
+}
+model Document {
+ id String @id @default(uuid()) @map("_id")
+ ownerId String
+ owner User @relation(fields:[ownerId],references:[id])
+ type String
+ fileKey String @unique
+ filename String
+ mime String
+ size Int
+ public Boolean @default(false)
+ status String @default("UPLOADING")
+ rejectionReason String?
+ createdAt DateTime @default(now())
+ @@index([ownerId,status])
+}
+model Exam {
+ id String @id @default(uuid()) @map("_id")
+ body String
+ name String
+ description String
+ feeMinor BigInt
+ currency String @default("NGN")
+ opensAt DateTime
+ closesAt DateTime
+ timetable Json @default("[]")
+ requirements Json @default("[]")
+ centre String
+ capacity Int
+ active Boolean @default(true)
+ enrolments ExamEnrolment[]
+}
+model ExamEnrolment {
+ id String @id @default(uuid()) @map("_id")
+ studentId String
+ student Student @relation(fields:[studentId],references:[id])
+ examId String
+ exam Exam @relation(fields:[examId],references:[id])
+ candidateNumber String? @unique
+ status String @default("PENDING")
+ result Json?
+ createdAt DateTime @default(now())
+ @@unique([studentId,examId])
+}
+model Hostel {
+ id String @id @default(uuid()) @map("_id")
+ name String
+ description String
+ gender String
+ rules String
+ active Boolean @default(true)
+ rooms Room[]
+}
+model Room {
+ id String @id @default(uuid()) @map("_id")
+ hostelId String
+ hostel Hostel @relation(fields:[hostelId],references:[id])
+ name String
+ capacity Int
+ priceMinor BigInt
+ depositMinor BigInt @default(0)
+ currency String @default("NGN")
+ amenities Json @default("[]")
+ gender String
+ photos Json @default("[]")
+ active Boolean @default(true)
+ bookings HostelBooking[]
+}
+model HostelBooking {
+ id String @id @default(uuid()) @map("_id")
+ roomId String
+ room Room @relation(fields:[roomId],references:[id])
+ studentId String
+ student Student @relation(fields:[studentId],references:[id])
+ term String
+ status String @default("HELD")
+ holdExpiresAt DateTime?
+ arrival DateTime
+ departure DateTime
+ bed Int
+ amountMinor BigInt
+ payments Payment[]
+ createdAt DateTime @default(now())
+ @@index([roomId,term,status])
+ @@index([status,holdExpiresAt])
+}
+model CarouselSlide {
+ id String @id @default(uuid()) @map("_id")
+ image String
+ caption String
+ title String
+ order Int @default(0)
+ visible Boolean @default(true)
+}
+model Fee {
+ id String @id @default(uuid()) @map("_id")
+ name String
+ purpose PaymentPurpose
+ amountMinor BigInt
+ currency String
+ instalments Int @default(1)
+ active Boolean @default(true)
+}
+model Coupon {
+ id String @id @default(uuid()) @map("_id")
+ code String @unique
+ percent Int
+ expiresAt DateTime
+ active Boolean @default(true)
+}
+model Payment {
+ id String @id @default(uuid()) @map("_id")
+ reference String @unique
+ idempotencyKey String @unique
+ requestHash String
+ provider Provider
+ providerId String? @unique
+ purpose PaymentPurpose
+ amountMinor BigInt
+ currency String
+ status PaymentStatus @default(PENDING)
+ payerEmail String
+ payerPhone String
+ payerName String
+ statusTokenHash String
+ studentId String?
+ student Student? @relation(fields:[studentId],references:[id])
+ feeId String?
+ examId String?
+ bookingId String?
+ booking HostelBooking? @relation(fields:[bookingId],references:[id])
+ rawPayload Json?
+ verifiedAt DateTime?
+ checkoutUrl String?
+ createdAt DateTime @default(now())
+ receipt Receipt?
+ refunds Refund[]
+ @@index([studentId,status])
+}
+model Receipt {
+ id String @id @default(uuid()) @map("_id")
+ paymentId String @unique
+ payment Payment @relation(fields:[paymentId],references:[id])
+ receiptNumber String @unique
+ createdAt DateTime @default(now())
+}
+model Refund {
+ id String @id @default(uuid()) @map("_id")
+ paymentId String
+ payment Payment @relation(fields:[paymentId],references:[id])
+ status String @default("REQUESTED")
+ reason String
+ amountMinor BigInt
+ providerReference String?
+ actorId String
+ createdAt DateTime @default(now())
+}
+model WebhookEvent {
+ id String @id @default(uuid()) @map("_id")
+ provider Provider
+ eventId String
+ reference String
+ processedAt DateTime?
+ createdAt DateTime @default(now())
+ @@unique([provider,eventId])
+}
+model ConsultationSlot {
+ id String @id @default(uuid()) @map("_id")
+ advisorId String
+ advisor String
+ startsAt DateTime
+ endsAt DateTime
+ mode String
+ active Boolean @default(true)
+ booking ConsultationBooking?
+ @@unique([advisorId,startsAt])
+}
+model ConsultationBooking {
+ id String @id @default(uuid()) @map("_id")
+ slotId String? @unique
+ originalSlotId String
+ slot ConsultationSlot? @relation(fields:[slotId],references:[id])
+ studentId String
+ student Student @relation(fields:[studentId],references:[id])
+ status String @default("CONFIRMED")
+ link String?
+ notes String @default("")
+ createdAt DateTime @default(now())
+}
+model Announcement {
+ id String @id @default(uuid()) @map("_id")
+ title String
+ body String
+ attachments Json @default("[]")
+ category String
+ audience Json
+ audienceType String @default("Website")
+ audienceValue String?
+ attachmentIds String[] @default([])
+ channels String[]
+ status PostStatus @default(DRAFT)
+ publishAt DateTime?
+ expireAt DateTime?
+ pinned Boolean @default(false)
+ version Int @default(1)
+ createdAt DateTime @default(now())
+ reads AnnouncementRead[]
+ @@index([status,publishAt,expireAt])
+}
+model AnnouncementRead {
+ id String @id @default(uuid()) @map("_id")
+ announcementId String
+ announcement Announcement @relation(fields:[announcementId],references:[id])
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ readAt DateTime @default(now())
+ @@unique([announcementId,userId])
+}
+model Notification {
+ id String @id @default(uuid()) @map("_id")
+ userId String
+ user User @relation(fields:[userId],references:[id])
+ title String
+ body String
+ readAt DateTime?
+ createdAt DateTime @default(now())
+ @@index([userId,createdAt])
+}
+model Thread {
+ id String @id @default(uuid()) @map("_id")
+ studentId String
+ student Student @relation(fields:[studentId],references:[id])
+ subject String
+ messages Message[]
+ createdAt DateTime @default(now())
+}
+model Message {
+ id String @id @default(uuid()) @map("_id")
+ threadId String
+ thread Thread @relation(fields:[threadId],references:[id])
+ authorId String
+ author User @relation(fields:[authorId],references:[id])
+ body String
+ createdAt DateTime @default(now())
+}
+model SiteContent {
+ key String @id @map("_id")
+ value Json
+ updatedBy String
+ updatedAt DateTime @updatedAt
+}
+model Setting {
+ key String @id @map("_id")
+ value Json
+}
+model IdCounter {
+ key String @id @map("_id")
+ nextNumber Int @default(1)
+}
+model IdReservation {
+ studentId String @id @map("_id")
+ allocatedAt DateTime @default(now())
+}
+model AuditLog {
+ id String @id @default(uuid()) @map("_id")
+ actorId String
+ action String
+ entity String
+ entityId String
+ before Json?
+ after Json?
+ ip String
+ at DateTime @default(now())
+ @@index([actorId,at])
+ @@index([entity,entityId])
+}
+model Outbox {
+ id String @id @default(uuid()) @map("_id")
+ key String @unique
+ kind String
+ payload String
+ status String @default("PENDING")
+ attempts Int @default(0)
+ runAt DateTime @default(now())
+ lockedAt DateTime?
+ lastError String?
+ createdAt DateTime @default(now())
+ @@index([status,runAt])
+}
+model RateBucket {
+ key String @id @map("_id")
+ count Int @default(1)
+ expiresAt DateTime
+}
+
+// Transactional guard documents serialize decisions on a shared room, slot or account.
+model DatabaseLock {
+ key String @id @map("_id")
+ version Int @default(0)
+}

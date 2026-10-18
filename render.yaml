@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: pathway-api
+    runtime: docker
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/ready
+    preDeployCommand: npm run db:setup
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: MONGODB_URI
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: PUBLIC_API_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+  - type: worker
+    name: pathway-worker
+    runtime: docker
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node dist/src/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: MONGODB_URI
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: PUBLIC_API_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false

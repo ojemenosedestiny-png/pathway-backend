@@ -1,0 +1,12 @@
+node_modules
+.env
+.env.*
+env
+env.txt
+.git
+*.log
+backups
+.test-pg
+dist
+test
+backend
