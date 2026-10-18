@@ -10,6 +10,7 @@ export const configuration = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().default(4000),
+  RUN_WORKER_IN_API: z.enum(["true", "false"]).default("false"),
   DATABASE_URL: z.string().min(1),
   FRONTEND_ORIGIN: z.string().url(),
   PUBLIC_API_ORIGIN: z.string().url(),

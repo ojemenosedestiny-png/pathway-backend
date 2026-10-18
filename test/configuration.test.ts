@@ -26,3 +26,8 @@ test("runtime continues to validate required security secrets", () => {
   assert.throws(() => runtimeConfiguration({ ...env, JWT_SECRET: "" }));
   assert.throws(() => runtimeConfiguration({ ...env, ENCRYPTION_KEY: "" }));
 });
+test("embedded worker is opt-in and accepts only explicit true or false", () => {
+  assert.equal(runtimeConfiguration(env).RUN_WORKER_IN_API,"false");
+  assert.equal(runtimeConfiguration({...env,RUN_WORKER_IN_API:"true"}).RUN_WORKER_IN_API,"true");
+  assert.throws(()=>runtimeConfiguration({...env,RUN_WORKER_IN_API:"yes"}));
+});
