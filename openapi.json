@@ -8376,12 +8376,17 @@
                     "enum": [
                       "application/pdf",
                       "image/jpeg",
-                      "image/png"
+                      "image/png",
+                      "image/webp",
+                      "video/mp4",
+                      "video/webm"
                     ]
                   },
                   "size": {
                     "type": "integer",
-                    "maximum": 10485760
+                    "minimum": 1,
+                    "maximum": 52428800,
+                    "description": "Images/PDF up to 10 MiB; public MEDIA videos up to 50 MiB."
                   },
                   "type": {
                     "type": "string",
@@ -8489,6 +8494,53 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful response; shapes documented in API-CONTRACT.md"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Role, ownership or CSRF failure"
+          },
+          "409": {
+            "description": "State or concurrency conflict"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/files/{id}/status": {
+      "get": {
+        "summary": "Own upload or permitted public media status; returns id, filename, mime, status and url (null until approved public media)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response; shapes documented in API-CONTRACT.md"

@@ -47,12 +47,12 @@ export function fileRouter(db: PrismaClient, config: Config) {
               .min(1)
               .max(150)
               .regex(/^[\w .()-]+$/),
-            mime: z.enum(["application/pdf", "image/jpeg", "image/png"]),
+            mime: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
             size: z
               .number()
               .int()
               .min(1)
-              .max(10 * 1024 * 1024),
+              .max(50 * 1024 * 1024),
             type: z.enum(["PASSPORT", "RESULT", "IDENTITY", "OTHER", "MEDIA"]),
             public: z.boolean().default(false),
             ownerId: idSchema.optional(),
@@ -61,6 +61,11 @@ export function fileRouter(db: PrismaClient, config: Config) {
         req.body,
       );
       const p = req.principal!;
+      const video = d.mime.startsWith("video/");
+      if (video && (!d.public || d.type !== "MEDIA"))
+        fail(422, "MEDIA_ONLY", "Videos must be uploaded as public school media.");
+      if (!video && d.size > 10 * 1024 * 1024)
+        fail(422, "FILE_TOO_LARGE", "Images and documents must be 10 MB or smaller.");
       if (
         d.public &&
         (p.role !== "ADMIN" ||
@@ -80,6 +85,8 @@ export function fileRouter(db: PrismaClient, config: Config) {
         if (!(await db.student.findUnique({ where: { userId: ownerId } })))
           fail(422, "STUDENT_REQUIRED", "Target owner must be a student.");
       }
+      if (!config.SCANNER_URL || !config.SCANNER_TOKEN || (d.public && !config.PUBLIC_MEDIA_BASE))
+        fail(503, "STORAGE_UNCONFIGURED", "The owner must configure file storage, public media delivery and security scanning on Render before uploading.");
       storage(config);
       const file = await transaction(db, async (tx) => {
         const item = await tx.document.create({
@@ -120,6 +127,15 @@ export function fileRouter(db: PrismaClient, config: Config) {
       });
     }),
   );
+  r.get("/:id/status", wrap(async (req, res) => {
+    const f = await db.document.findUnique({ where: { id: parse(idSchema, req.params.id) } });
+    const p = req.principal!;
+    const mediaAccess = p.role === "ADMIN" && (p.adminRole === "SUPER_ADMIN" || p.permissions.read.includes("media") || p.permissions.write.includes("media"));
+    if (!f || (f.ownerId !== p.id && !(mediaAccess && f.public))) fail(404, "NOT_FOUND", "File unavailable.");
+    const url = f.public && f.status === "APPROVED" && f.fileKey.startsWith("public/") && config.PUBLIC_MEDIA_BASE
+      ? config.PUBLIC_MEDIA_BASE.replace(/\/$/, "") + "/" + f.fileKey : null;
+    res.json({ id: f.id, filename: f.filename, mime: f.mime, status: f.status, url });
+  }));
   r.post(
     "/:id/complete",
     wrap(async (req, res) => {

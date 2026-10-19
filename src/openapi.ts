@@ -279,9 +279,9 @@ endpoint(
       filename: string,
       mime: {
         type: "string",
-        enum: ["application/pdf", "image/jpeg", "image/png"],
+        enum: ["application/pdf", "image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"],
       },
-      size: { type: "integer", maximum: 10485760 },
+      size: { type: "integer", minimum: 1, maximum: 52428800, description: "Images/PDF up to 10 MiB; public MEDIA videos up to 50 MiB." },
       type: {
         type: "string",
         enum: ["PASSPORT", "RESULT", "IDENTITY", "OTHER", "MEDIA"],
@@ -297,6 +297,13 @@ endpoint(
   "/files/{id}/complete",
   "Queue MIME and malware validation",
   object({}),
+  true,
+);
+endpoint(
+  "get",
+  "/files/{id}/status",
+  "Own upload or permitted public media status; returns id, filename, mime, status and url (null until approved public media)",
+  undefined,
   true,
 );
 endpoint(
