@@ -1,3 +1,4 @@
+import {admissionSchema} from './admissions.js';
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { resourceSchemas } from "./admin.js";
 const json = (schema: object) => ({ "application/json": { schema } });
@@ -721,3 +722,9 @@ for (const [path, methods] of Object.entries(openapi.paths) as [
       );
   }
 }
+
+endpoint('get','/public/admission-programmes','Available pre-portal admission programmes');
+endpoint('post','/public/applications','Submit admissions application without a student account',zodToJsonSchema(admissionSchema,{$refStrategy:'none',target:'openApi3'}));
+openapi.paths['/public/applications'].post.parameters.push({name:'Idempotency-Key',in:'header',required:true,schema:uuid});
+endpoint('get','/admin/applicants','Admissions intake list; applications read permission',undefined,true);
+endpoint('patch','/admin/applicants/{id}/status','Review intake without creating a portal',object({status:{type:'string',enum:['UNDER_REVIEW','NEEDS_INFORMATION','ACCEPTED','REJECTED']},comment:{type:'string',minLength:1,maxLength:2000}}),true);

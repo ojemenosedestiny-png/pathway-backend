@@ -1,3 +1,4 @@
+import {publicAdmissionsRouter} from './admissions.js';
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -90,6 +91,7 @@ export function createApp(
     csrf(config),
   );
   app.use("/auth", authRouter(db, config));
+  app.use("/public", publicAdmissionsRouter(db));
   app.use("/payments", paymentRouter(db, config, adapters));
   for (const [path, model] of Object.entries({
     countries: "country",

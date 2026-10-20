@@ -1,3 +1,4 @@
+import {adminAdmissionsRouter} from './admissions.js';
 import {guardCatalogWrite,guardCatalogDelete} from "./catalog-integrity.js";
 import {lock} from "./database.js";
 import { Router } from "express";
@@ -227,6 +228,7 @@ export function adminRouter(
         "Sign in with your authenticator again.",
       );
   };
+  r.use(adminAdmissionsRouter(db));
   r.get(
     "/media",
     moduleGuard("media"),

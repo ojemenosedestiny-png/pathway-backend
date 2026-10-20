@@ -1,3 +1,4 @@
+import {ensureAdmissionCollection} from './admissions.js';
 import {createDatabase,databaseUrl,assertDatabaseReady} from "./database.js";
 import { PrismaClient } from "@prisma/client";
 import { runtimeConfiguration, log } from "./core.js";
@@ -10,6 +11,7 @@ if (config.NODE_ENV === "production" && config.COOKIE_SECURE !== "true")
 const db = createDatabase();
 await db.$connect();
 await assertDatabaseReady(db);
+await ensureAdmissionCollection(db);
 const server = createApp(db, config).listen(config.PORT, () =>
   log.info({ port: config.PORT }, "API listening"),
 );

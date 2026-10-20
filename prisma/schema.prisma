@@ -177,6 +177,28 @@ model Course {
  active Boolean @default(true)
  applications Application[]
 }
+// Public admissions intake is independent of authenticated student applications.
+model AdmissionApplication {
+ id String @id @map("_id")
+ reference String
+ requestHash String
+ firstName String
+ lastName String
+ email String
+ phone String
+ programme String
+ currentSchool String @default("")
+ currentLevel String @default("")
+ guardianName String @default("")
+ guardianPhone String @default("")
+ notes String @default("")
+ consentAt DateTime
+ status String @default("SUBMITTED")
+ reviewNotes String @default("")
+ reviewedBy String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+}
 model Application {
  id String @id @default(uuid()) @map("_id")
  studentId String

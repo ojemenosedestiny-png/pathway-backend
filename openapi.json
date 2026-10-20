@@ -11325,6 +11325,284 @@
           }
         }
       }
+    },
+    "/public/admission-programmes": {
+      "get": {
+        "summary": "Available pre-portal admission programmes",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response; shapes documented in API-CONTRACT.md"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Role, ownership or CSRF failure"
+          },
+          "409": {
+            "description": "State or concurrency conflict"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/public/applications": {
+      "post": {
+        "summary": "Submit admissions application without a student account",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 80
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254
+                  },
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^\\+?[0-9 ()-]{7,25}$"
+                  },
+                  "programme": {
+                    "type": "string",
+                    "enum": [
+                      "Cambridge Curriculum",
+                      "Nigerian Curriculum",
+                      "Cambridge International Examination - Year 8",
+                      "Checkpoint (Cambridge)",
+                      "IGCSE - JSS 3",
+                      "BECE - ERC / NECO - JSS 3",
+                      "SSCE - WAEC",
+                      "SSCE - NECO",
+                      "SAT",
+                      "HMB (Pre-Degree)"
+                    ]
+                  },
+                  "currentSchool": {
+                    "type": "string",
+                    "maxLength": 180,
+                    "default": ""
+                  },
+                  "currentLevel": {
+                    "type": "string",
+                    "maxLength": 80,
+                    "default": ""
+                  },
+                  "guardianName": {
+                    "type": "string",
+                    "maxLength": 150,
+                    "default": ""
+                  },
+                  "guardianPhone": {
+                    "type": "string",
+                    "maxLength": 25,
+                    "default": ""
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "default": ""
+                  },
+                  "consent": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "firstName",
+                  "lastName",
+                  "email",
+                  "phone",
+                  "programme",
+                  "consent"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response; shapes documented in API-CONTRACT.md"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Role, ownership or CSRF failure"
+          },
+          "409": {
+            "description": "State or concurrency conflict"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/admin/applicants": {
+      "get": {
+        "summary": "Admissions intake list; applications read permission",
+        "parameters": [],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response; shapes documented in API-CONTRACT.md"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Role, ownership or CSRF failure"
+          },
+          "409": {
+            "description": "State or concurrency conflict"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/admin/applicants/{id}/status": {
+      "patch": {
+        "summary": "Review intake without creating a portal",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "UNDER_REVIEW",
+                      "NEEDS_INFORMATION",
+                      "ACCEPTED",
+                      "REJECTED"
+                    ]
+                  },
+                  "comment": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "status",
+                  "comment"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response; shapes documented in API-CONTRACT.md"
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Role, ownership or CSRF failure"
+          },
+          "409": {
+            "description": "State or concurrency conflict"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
     }
   }
 }

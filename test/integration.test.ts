@@ -1,3 +1,4 @@
+import {submitAdmission,admissionSchema,ensureAdmissionCollection} from '../src/admissions.js';
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -872,4 +873,21 @@ test("scanned private uploads move away from replayable upload URLs", async () =
     ).status,
     403,
   );
+});
+
+
+test("public admissions persist once under concurrency without creating portal accounts", async()=>{
+ await ensureAdmissionCollection(db);
+ const id=crypto.randomUUID(),beforeStudents=await db.student.count(),beforeUsers=await db.user.count();
+ const data=admissionSchema.parse({firstName:'Guest',lastName:'Applicant',email:'guest-'+id+'@example.test',phone:'+2348000000000',programme:'Cambridge Curriculum',consent:true});
+ const responses=await Promise.all(Array.from({length:8},()=>submitAdmission(db,id,data,'127.0.0.1')));
+ assert.equal(new Set(responses.map(row=>row.item.reference)).size,1);
+ assert.equal(responses.filter(row=>row.created).length,1);
+ assert.equal(await db.admissionApplication.count({where:{id}}),1);
+ assert.equal(await db.auditLog.count({where:{entity:'AdmissionApplication',entityId:id,action:'ADMISSION_SUBMITTED'}}),1);
+ assert.equal(await db.student.count(),beforeStudents);assert.equal(await db.user.count(),beforeUsers);
+ const guest=request.agent(app),token=await csrf(guest);
+ const result=await post(guest,token,'/public/applications',{...data}).set('Idempotency-Key',id);
+ assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.email,undefined);
+ assert.equal((await guest.get('/admin/applicants')).status,401);
 });
