@@ -27,7 +27,15 @@ async function email(config: Config, key: string, d: any) {
         ? `<p>Your Student ID: <strong>${escape(d.studentId)}</strong></p>`
         : d.template === "receipt"
           ? `<p>Payment verified: ${escape(d.reference)}</p><p>${escape(d.currency)} ${escape((Number(d.amountMinor) / 100).toFixed(2))}</p><p>Sign in to download your receipt.</p>`
-          : `<p>${escape(d.body || "You have a new update in your portal.")}</p>`;
+          : `<p>${escape(d.body || "You have a new update in your portal.")}</p>${d.link&&String(d.link).startsWith(config.FRONTEND_ORIGIN+'/apply#')?`<p><a href="${escape(d.link)}">Continue your application</a></p>`:''}`;
+  let attachments: {filename:string;content:string}[]|undefined;
+  if(d.template==='receipt'){
+    const pdf=new PDFDocument({margin:55});const chunks:Buffer[]=[];
+    const ready=new Promise<Buffer>((resolve,reject)=>{pdf.on('data',chunk=>chunks.push(chunk));pdf.on('end',()=>resolve(Buffer.concat(chunks)));pdf.on('error',reject);});
+    pdf.fontSize(24).text('NewworldPathway').fontSize(14).text('Payment receipt').moveDown();
+    for(const line of ['Reference: '+d.reference,'Student ID: '+d.studentId,'Amount: '+d.currency+' '+new Intl.NumberFormat('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(d.amountMinor)/100),'Status: Verified'])pdf.text(line);
+    pdf.end();attachments=[{filename:'payment-receipt.pdf',content:(await ready).toString('base64')}];
+  }
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -40,6 +48,7 @@ async function email(config: Config, key: string, d: any) {
       to: [d.to],
       subject,
       html,
+      ...(attachments?{attachments}:{}),
     }),
     signal: AbortSignal.timeout(15000),
   });
@@ -402,3 +411,4 @@ export async function workOnce(db: PrismaClient, config: Config) {
   }
   return jobs.length;
 }
+import PDFDocument from 'pdfkit';

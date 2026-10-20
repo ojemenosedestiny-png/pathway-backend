@@ -891,3 +891,14 @@ test("public admissions persist once under concurrency without creating portal a
  assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.email,undefined);
  assert.equal((await guest.get('/admin/applicants')).status,401);
 });
+import {reviewTransfer} from '../src/bank-transfers.js';
+
+
+test('transfer review atomically creates one portal account and rejects reused evidence',async()=>{
+ const {seal,digest}=await import('../src/core.js');const before=await db.student.count();
+ async function fixture(hash:string){const id=crypto.randomUUID(),email='transfer-'+id+'@example.test';const admission=await db.admissionApplication.create({data:{id,reference:'NWP-EX-TEST-'+id,requestHash:digest(id),firstName:'Transfer',lastName:'Applicant',email,phone:'+2348000000000',programme:'Test exam',consentAt:new Date()}});await db.applicantDraft.create({data:{id,email,tokenHash:digest(id),payload:seal({},config),expiresAt:new Date(Date.now()+86400000),submittedAt:new Date(),admissionId:id}});const payment=await db.payment.create({data:{reference:admission.reference,idempotencyKey:id,requestHash:digest(id),provider:'BANK',purpose:'REGISTRATION',amountMinor:10000n,currency:'NGN',payerEmail:email,payerPhone:'+2348000000000',payerName:'Transfer Applicant',statusTokenHash:digest(id)}});await db.applicationInvoice.create({data:{id,paymentId:payment.id,reference:payment.reference,accounts:[],lines:[]}});const file=await db.applicantFile.create({data:{draftId:id,purpose:'Payment proof',filename:'proof.png',mime:'image/png',size:10,hash,key:'private/test/'+id}});const proof=await db.transferProof.create({data:{invoiceId:id,fileId:file.id,payerName:'Test Payer',amountMinor:10000n,bankUsed:'Test bank',transferDate:new Date(),transactionReference:'TEST-'+id}});return{id,payment,proof};}
+ const a=await fixture('shared-test-evidence-'+crypto.randomUUID());const review={decision:'VERIFIED',reason:'Test fixture: credit confirmed against a synthetic bank statement.',creditConfirmed:true,creditedAmountMinor:'10000'};
+ await Promise.all(Array.from({length:4},()=>reviewTransfer(db,config,a.proof.id,review,'fixture-finance','127.0.0.1')));
+ assert.equal(await db.student.count(),before+1);assert.equal((await db.admissionApplication.findUniqueOrThrow({where:{id:a.id}})).status,'PAID');assert.equal((await db.transferProof.findUniqueOrThrow({where:{id:a.proof.id}})).status,'VERIFIED');assert.equal(await db.receipt.count({where:{paymentId:a.payment.id}}),1);
+ const source=await db.applicantFile.findUniqueOrThrow({where:{id:a.proof.fileId}});const b=await fixture(source.hash);await assert.rejects(()=>reviewTransfer(db,config,b.proof.id,review,'fixture-finance','127.0.0.1'));assert.equal(await db.student.count(),before+1);assert.equal((await db.payment.findUniqueOrThrow({where:{id:b.payment.id}})).status,'PENDING');assert.equal((await db.transferProof.findUniqueOrThrow({where:{id:b.proof.id}})).status,'PENDING');
+});

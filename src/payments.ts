@@ -64,13 +64,17 @@ export async function settlePayment(
   verified: Verified,
   actor = "provider",
   ip = "",
+  onVerified?: (tx: Prisma.TransactionClient, payment: Payment) => Promise<void>,
 ) {
   return transaction(db, async (tx) => {
     await lock(tx,"Payment:"+(reference));
     let p = await tx.payment.findUnique({ where: { reference } });
     if (!p) fail(404, "PAYMENT_NOT_FOUND", "Payment not found.");
     validateVerification(p, verified);
-    if (p.status === "SUCCESS" || p.status === "REFUNDED") return p;
+    if (p.status === "SUCCESS" || p.status === "REFUNDED") {
+      if(p.status==='SUCCESS'&&onVerified)await onVerified(tx,p);
+      return p;
+    }
     if (verified.status !== "SUCCESS") {
       if (verified.status === "FAILED")
         await tx.payment.update({
@@ -196,6 +200,7 @@ export async function settlePayment(
       status: "SUCCESS",
       studentId,
     });
+    if(onVerified)await onVerified(tx,p);
     return p;
   });
 }

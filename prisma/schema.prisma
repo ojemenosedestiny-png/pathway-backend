@@ -141,6 +141,77 @@ model AuthChallenge {
  attempts Int @default(0)
  usedAt DateTime?
 }
+model SchoolPaymentAccount {
+ id String @id @default(uuid()) @map("_id")
+ bankName String
+ accountName String
+ accountNumber String
+ currency String @default("NGN")
+ purpose String @default("ALL")
+ instructions String @default("")
+ active Boolean @default(true)
+ order Int @default(0)
+ changedBy String
+ changedAt DateTime @updatedAt
+}
+model ApplicationInvoice {
+ id String @id @map("_id")
+ paymentId String @unique
+ reference String @unique
+ accounts Json
+ accountHistory Json @default("[]")
+ lines Json
+ createdAt DateTime @default(now())
+}
+model TransferProof {
+ id String @id @default(uuid()) @map("_id")
+ invoiceId String
+ fileId String @unique
+ payerName String
+ amountMinor BigInt
+ bankUsed String
+ transferDate DateTime
+ transactionReference String
+ flags String[] @default([])
+ status String @default("PENDING")
+ reason String @default("")
+ reviewedBy String?
+ reviewedAt DateTime?
+ createdAt DateTime @default(now())
+ @@index([invoiceId,status])
+}
+model TransferVerification {
+ key String @id @map("_id")
+ proofId String
+}
+model ApplicantSession {
+ key String @id @map("_id")
+ draftId String
+}
+model ApplicantDraft {
+ id String @id @default(uuid()) @map("_id")
+ tokenHash String
+ payload String
+ email String
+ expiresAt DateTime
+ submittedAt DateTime?
+ admissionId String?
+ duplicateKey String? @unique
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+}
+model ApplicantFile {
+ id String @id @default(uuid()) @map("_id")
+ draftId String
+ purpose String
+ filename String
+ mime String
+ size Int
+ hash String
+ key String @unique
+ createdAt DateTime @default(now())
+ @@index([draftId])
+}
 model CatalogueEntry {
  id String @id @default(uuid()) @map("_id")
  slug String @unique
@@ -226,6 +297,7 @@ model AdmissionApplication {
  status String @default("SUBMITTED")
  reviewNotes String @default("")
  reviewedBy String?
+ studentId String?
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
 }

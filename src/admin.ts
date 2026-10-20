@@ -230,6 +230,8 @@ export function adminRouter(
   };
   r.use(adminAdmissionsRouter(db));
   r.use(adminCatalogueRouter(db));
+  r.use(adminApplicationFlowRouter(db,config));
+  r.use(adminTransfersRouter(db,config));
   r.get(
     "/media",
     moduleGuard("media"),
@@ -1312,6 +1314,8 @@ export function adminRouter(
           "NOT_OFFLINE",
           "Only bank-transfer records can be manually verified.",
         );
+      if(await db.applicationInvoice.findUnique({where:{reference:p.reference}}))
+        fail(422,'USE_TRANSFER_QUEUE','Review this application payment in the payment-proof queue and confirm the actual bank credit.');
       res.json(
         await settlePayment(
           db,
@@ -1693,3 +1697,5 @@ export function adminRouter(
   return r;
 }
 import {adminCatalogueRouter} from './catalogue.js';
+import {adminApplicationFlowRouter} from './application-flow.js';
+import {adminTransfersRouter} from './bank-transfers.js';
