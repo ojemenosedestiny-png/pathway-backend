@@ -1,7 +1,7 @@
 import {Router} from 'express';
 import {PrismaClient} from '@prisma/client';
 import {z} from 'zod';
-import {wrap,parse,rate,digest,transaction,audit,fail,pageSchema,idSchema} from './core.js';
+import {wrap,parse,rate,digest,transaction,audit,fail,pageSchema,idSchema,queue,type Config} from './core.js';
 import {moduleGuard} from './auth.js';
 
 export const admissionProgrammes=['Cambridge Curriculum','Nigerian Curriculum','Cambridge International Examination - Year 8','Checkpoint (Cambridge)','IGCSE - JSS 3','BECE - ERC / NECO - JSS 3','SSCE - WAEC','SSCE - NECO','SAT','HMB (Pre-Degree)'] as const;
@@ -37,10 +37,15 @@ export function publicAdmissionsRouter(db:PrismaClient){const r=Router();
   res.status(result.created?201:200).json(result.item);
  }));return r;
 }
-export function adminAdmissionsRouter(db:PrismaClient){const r=Router();
+export function adminAdmissionsRouter(db:PrismaClient,config:Config){const r=Router();
  r.get('/applicants',moduleGuard('applications'),wrap(async(req,res)=>{res.json(await db.admissionApplication.findMany({select:{id:true,reference:true,firstName:true,lastName:true,email:true,phone:true,programme:true,currentSchool:true,currentLevel:true,guardianName:true,guardianPhone:true,notes:true,status:true,reviewNotes:true,consentAt:true,createdAt:true,updatedAt:true},orderBy:{createdAt:'desc'},...parse(pageSchema,req.query)}));}));
  r.patch('/applicants/:id/status',moduleGuard('applications',true),wrap(async(req,res)=>{
   const id=parse(idSchema,req.params.id);const data=parse(z.object({status:z.enum(['UNDER_REVIEW','NEEDS_INFORMATION','ACCEPTED','REJECTED']),comment:z.string().trim().min(1).max(2000)}).strict(),req.body);
-  const item=await transaction(db,async tx=>{const before=await tx.admissionApplication.findUniqueOrThrow({where:{id}});const after=await tx.admissionApplication.update({where:{id},data:{status:data.status,reviewNotes:data.comment,reviewedBy:req.principal!.id}});await audit(tx,req.principal!.id,'ADMISSION_REVIEWED','AdmissionApplication',id,req.ip||'',{status:before.status},{status:after.status,comment:data.comment});return receipt(after);});res.json(item);
+  const item=await transaction(db,async tx=>{const before=await tx.admissionApplication.findUniqueOrThrow({where:{id}});const after=await tx.admissionApplication.update({where:{id},data:{status:data.status,reviewNotes:data.comment,reviewedBy:req.principal!.id}});
+   if(after.status==='ACCEPTED')await queue(tx,config,'admission-accepted:'+id,'EMAIL',{
+    to:after.email,template:'status',title:'Your NewworldPathway application has been accepted',
+    body:`Hello ${after.firstName}. The school has accepted your application for ${after.programme}. Your application reference is ${after.reference}. Contact admissions to confirm your registration requirements and preparation fees: ${new URL('/contact',config.FRONTEND_ORIGIN).href}. Acceptance alone does not create a Student ID or portal account. These are issued separately after confirmed registration. This is exam preparation; official exam registration is confirmed separately.`,
+   });
+   await audit(tx,req.principal!.id,'ADMISSION_REVIEWED','AdmissionApplication',id,req.ip||'',{status:before.status},{status:after.status,comment:data.comment});return receipt(after);});res.json(item);
  }));return r;
 }

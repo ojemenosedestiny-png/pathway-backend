@@ -230,7 +230,7 @@ export function adminRouter(
         "Sign in with your authenticator again.",
       );
   };
-  r.use(adminAdmissionsRouter(db));
+  r.use(adminAdmissionsRouter(db,config));
   r.use(admissionPolicyRouter(db));
   r.get(
     "/media",
