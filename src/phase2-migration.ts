@@ -54,9 +54,14 @@ export async function migratePhase2(url = databaseUrl(), apply = false) {
       .collection("SchemaMigration")
       .updateOne(
         { _id: phase2MigrationKey } as any,
-        { $setOnInsert: { appliedAt: new Date(), resultJson: result } },
+        { $setOnInsert: { appliedAt: new Date(), result } },
         { upsert: true },
       );
+    // Repair completion records written by the first release with the wrong field name.
+    await db.collection("SchemaMigration").updateOne(
+      { _id: phase2MigrationKey, result: null } as any,
+      { $set: { result: applied?.resultJson ?? result } },
+    );
     return { mode: "apply", alreadyApplied: !!applied, ...result };
   } finally {
     await client.close();

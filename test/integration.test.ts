@@ -938,6 +938,16 @@ test('Phase 2 migration previews without writes and applies repeatably',async()=
  const {migratePhase2}=await import('../src/phase2-migration.js');
  const before=await db.schemaMigration.count();const dry=await migratePhase2(url);assert.equal(dry.mode,'dry-run');assert.equal(await db.schemaMigration.count(),before);
  await migratePhase2(url,true);const count=await db.schemaMigration.count();await migratePhase2(url,true);assert.equal(await db.schemaMigration.count(),count);
+ const {assertPhase2Ready}=await import('../src/database.js');
+ await assertPhase2Ready(db);
+ const marker=await db.schemaMigration.findUniqueOrThrow({where:{key:'platform-phase-2-v1'}});
+ assert.ok(marker.result);
+ await db.$runCommandRaw({update:'SchemaMigration',updates:[{q:{_id:'platform-phase-2-v1'},u:{$unset:{result:''},$set:{resultJson:{usersBackfilled:2}}}}]});
+ await migratePhase2(url,true);
+ await assertPhase2Ready(db);
+ const repaired=await db.schemaMigration.findUniqueOrThrow({where:{key:'platform-phase-2-v1'}});
+ assert.deepEqual(repaired.result,{usersBackfilled:2});
+ assert.equal(repaired.appliedAt.getTime(),marker.appliedAt.getTime());
 });
 
 
