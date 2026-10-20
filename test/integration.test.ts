@@ -926,6 +926,9 @@ test('Phase 2: verified applicants promote atomically, retaining their password 
  assert.equal(new Set(results.map(p=>p.studentId)).size,1);
  const promoted=await db.user.findUniqueOrThrow({where:{id:user.id},include:{student:true,applicant:true}});
  assert.equal(promoted.role,'STUDENT');assert.equal(promoted.passwordHash,user.passwordHash);assert.ok(promoted.applicant!.applicationFeeVerifiedAt);
+ const welcomeJobs=await db.outbox.findMany({where:{key:'student-id-issued:'+user.id}});assert.equal(welcomeJobs.length,1);
+ const welcome=unseal(welcomeJobs[0].payload,config) as any;assert.equal(welcome.template,'student-ready');assert.equal(welcome.studentId,promoted.student!.studentId);assert.equal(welcome.link,config.FRONTEND_ORIGIN+'/student/login');assert.ok(!JSON.stringify(welcome).includes(password));
+
  assert.equal(await db.student.count({where:{userId:user.id}}),1);assert.equal(await db.receipt.count({where:{paymentId:pay.id}}),1);
  assert.equal((await db.invoice.findUniqueOrThrow({where:{id:created.body.id}})).status,'PAID');
  for(const identifier of[email,promoted.student!.studentId]){const a=request.agent(app),c=await csrf(a);assert.equal((await post(a,c,'/auth/student/login',{studentId:identifier,password})).status,200);assert.equal((await a.get('/portal/profile')).status,200);}

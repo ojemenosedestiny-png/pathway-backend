@@ -11,3 +11,12 @@ Configure a published application fee with owner-only GET/PUT `/admin/applicatio
 The bank-proof upload/review experience is Phase 3, and the complete application form is Phase 4. No production deployment is included in this phase.
 
 Validation: the isolated MongoDB suite passed 25 tests, including applicant signup, email verification and token replay rejection, ownership, forged-amount rejection, concurrent promotion, one receipt, unchanged password and email/ID login, and migration preview/repeat application. An additional invoice-math/Exams Officer permissions test passed separately. Frontend fixture journeys and screenshots are documented in the companion frontend repository under `docs/platform-phase-2`.
+
+
+## Registration welcome email follow-up
+
+Verified applicant payment now queues a dedicated `student-ready` welcome email with the Student ID, sign-in link and recovery link on `FRONTEND_ORIGIN`. It preserves the chosen password and never places that password in the email payload. The permanent outbox key `student-id-issued:<user id>` prevents duplicate welcome jobs during repeated settlement. Students created without a password continue to receive a one-use password-setup link.
+
+Deployment remains pending access to Render. Do not point a running service at this branch before its additive migration has completed. After a backup and migration preview in the deployment environment, the compiled apply command is `node dist/prisma/migrate-phase2.js --apply`. Configure it as a supported pre-deploy step or run it from an authenticated deployment shell before releasing the new API. Run the worker from the same release. Release the companion frontend after the API is healthy, then select the application fee under owner Settings.
+
+Follow-up verification: backend build passed, and both invoice/role and welcome-email tests passed (including a simulated Resend request). A fresh full MongoDB run could not start because Docker Desktop returned an engine error; the earlier 25-test integration result remains the baseline, not a fresh run for this follow-up. No live email was sent by these tests.

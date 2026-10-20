@@ -11,3 +11,12 @@ test('Phase 2 invoice totals reject mixed currencies, negative lines and zero to
  assert.ok(defaultPermissions.EXAMS_OFFICER.read.includes('exams'));
  assert.ok(!defaultPermissions.EXAMS_OFFICER.write.includes('payments'));
 });
+
+
+test('student welcome email includes the ID, login and recovery links without sending a password',async()=>{
+ const {runJob}=await import('../src/jobs.js');const original=globalThis.fetch;let sent:any;
+ globalThis.fetch=async(_url,init)=>{sent=JSON.parse(String(init?.body));return new Response('{}',{status:200});};
+ try{await runJob({} as any,{RESEND_API_KEY:'synthetic-key',EMAIL_FROM:'NewworldPathway <noreply@mail.example.test>'} as any,'EMAIL','student-id-issued:synthetic',{to:'student@example.test',template:'student-ready',studentId:'PU-2026-000001',link:'https://example.test/student/login',resetLink:'https://example.test/forgot-password'});
+ assert.equal(sent.subject,'Your NewworldPathway Student ID');assert.match(sent.html,/PU-2026-000001/);assert.match(sent.html,/href="https:\/\/example.test\/student\/login"/);assert.match(sent.html,/href="https:\/\/example.test\/forgot-password"/);assert.match(sent.html,/password you created/);assert.equal(sent.to[0],'student@example.test');
+ }finally{globalThis.fetch=original;}
+});

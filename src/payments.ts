@@ -93,7 +93,7 @@ export async function settlePayment(
           user=await tx.user.update({where:{id:user.id},data:{role:'STUDENT',student:{create:{studentId:publicId,firstName:user.applicant.firstName,lastName:user.applicant.lastName,milestones:[{stage:'Application fee verified',at:new Date().toISOString()}]}}},include:{student:true,applicant:true}});
           studentId=user.student!.id;
           await tx.applicant.update({where:{userId:user.id},data:{applicationFeeVerifiedAt:new Date()}});
-          await queue(tx,config,'student-id-issued:'+user.id,'EMAIL',{to:user.email,title:'Your NewworldPathway Student ID',body:'Your application fee has been verified. Your Student ID is '+publicId+'. Sign in with your email address or Student ID and your existing password.'});
+          await queue(tx,config,'student-id-issued:'+user.id,'EMAIL',{to:user.email,template:'student-ready',studentId:publicId,link:config.FRONTEND_ORIGIN+'/student/login',resetLink:config.FRONTEND_ORIGIN+'/forgot-password'});
           await audit(tx,actor,'APPLICANT_PROMOTED','User',user.id,ip,undefined,{studentId:publicId,invoiceId:invoice.id});
         }else fail(
           409,
