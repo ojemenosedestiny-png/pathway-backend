@@ -1,4 +1,4 @@
-import {createDatabase,databaseUrl,assertDatabaseReady} from "./database.js";
+import {createDatabase,databaseUrl,assertDatabaseReady,assertPhase2Ready} from "./database.js";
 import { PrismaClient } from "@prisma/client";
 import { runtimeConfiguration, log } from "./core.js";
 import { schedule, workOnce } from "./jobs.js";
@@ -9,6 +9,7 @@ process.on("SIGTERM", () => (stopping = true));
 process.on("SIGINT", () => (stopping = true));
 await db.$connect();
 await assertDatabaseReady(db);
+await assertPhase2Ready(db);
 while (!stopping) {
   try {
     await schedule(db, config);

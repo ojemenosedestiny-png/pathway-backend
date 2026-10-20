@@ -229,6 +229,7 @@ export function adminRouter(
       );
   };
   r.use(adminAdmissionsRouter(db));
+  r.use(admissionPolicyRouter(db));
   r.get(
     "/media",
     moduleGuard("media"),
@@ -1413,6 +1414,7 @@ export function adminRouter(
             roleType: z.enum([
               "SUPER_ADMIN",
               "ADMISSIONS",
+            "EXAMS_OFFICER",
               "FINANCE",
               "HOSTEL",
               "CONTENT",
@@ -1471,6 +1473,7 @@ export function adminRouter(
               .enum([
                 "SUPER_ADMIN",
                 "ADMISSIONS",
+            "EXAMS_OFFICER",
                 "FINANCE",
                 "HOSTEL",
                 "CONTENT",
@@ -1691,3 +1694,4 @@ export function adminRouter(
   );
   return r;
 }
+import {admissionPolicyRouter} from './invoices.js';

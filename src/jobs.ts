@@ -17,11 +17,11 @@ async function email(config: Config, key: string, d: any) {
   if (!config.RESEND_API_KEY || !config.EMAIL_FROM)
     throw new Error("Email delivery is not configured");
   const subject =
-    d.template === "credentials"
+    d.template === 'verify-email'?'Verify your NewworldPathway email':d.template==='applicant-reset'?'Reset your NewworldPathway password':d.template === "credentials"
       ? "Set up your Pathway account"
       : d.title || "Pathway payment receipt";
   const html =
-    d.template === "credentials"
+    d.template==='verify-email'?`<p>Verify your email to continue your free NewworldPathway applicant account.</p><p><a href="${escape(d.link)}">Verify my email</a>. This link expires in 24 hours and can be used once.</p><p>If you did not request this account, contact the school. No payment or Student ID has been issued.</p>`:d.template==='applicant-reset'?`<p><a href="${escape(d.link)}">Reset your applicant account password</a>. This link expires in ${escape(d.hours)} hours.</p>`:d.template === "credentials"
       ? `<p>Your Student ID: <strong>${escape(d.studentId || "Administrator")}</strong></p><p><a href="${escape(d.link)}">Set your password</a>. This link expires in ${escape(d.hours)} hours.</p>`
       : d.template === "recover"
         ? `<p>Your Student ID: <strong>${escape(d.studentId)}</strong></p>`

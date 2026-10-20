@@ -19,7 +19,8 @@
     "format:check": "prettier --check src test prisma/seed.ts *.md *.json compose.yaml",
     "docs:export": "node ops/export-contract.mjs",
     "db:setup": "tsx prisma/setup-mongodb.ts",
-    "test:direct": "tsx --test test/*.test.ts"
+    "test:direct": "tsx --test test/*.test.ts",
+    "migrate:phase2": "tsx prisma/migrate-phase2.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.900.0",

@@ -891,3 +891,49 @@ test("public admissions persist once under concurrency without creating portal a
  assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.email,undefined);
  assert.equal((await guest.get('/admin/applicants')).status,401);
 });
+
+
+test('Phase 2: verified applicants promote atomically, retaining their password and identity', async()=>{
+ const email=random().slice(0,12)+'@example.test', password='Applicant-passphrase-2046';
+ const agent=request.agent(app), token=await csrf(agent);
+ assert.equal((await post(agent,token,'/auth/applicant/signup',{email,password,consent:true})).status,202);
+ const user=await db.user.findUniqueOrThrow({where:{email},include:{applicant:true,student:true}});
+ assert.equal(user.role,'APPLICANT');assert.equal(user.student,null);assert.match(user.applicant!.applicantNumber,/^APP-\d{4}-\d{4,6}$/);
+ assert.equal((await post(agent,token,'/auth/student/login',{studentId:email,password})).status,200);
+ assert.equal((await agent.get('/portal/profile')).status,403);
+ assert.equal((await post(agent,token,'/applicant/invoices/application',{})).status,403);
+ assert.equal((await post(agent,token,'/applicant/invoices/exam',{sourceId:crypto.randomUUID()})).status,403);
+ const job=await db.outbox.findFirstOrThrow({where:{key:{startsWith:'verify-email:'}},orderBy:{createdAt:'desc'}});
+ const link=(unseal(job.payload,config) as {link:string}).link;
+ const verifyToken=new URLSearchParams(new URL(link).hash.slice(1)).get('token');
+ assert.equal((await post(agent,token,'/auth/applicant/verify-email',{token:verifyToken})).status,200);
+ assert.equal((await post(agent,token,'/auth/applicant/verify-email',{token:verifyToken})).status,410);
+ const patch=await agent.patch('/applicant/profile').set('Origin',config.FRONTEND_ORIGIN).set('X-CSRF-Token',token).send({firstName:'Ada',lastName:'Test',phone:'+2348000000011'});assert.equal(patch.status,200);
+ const fee=await db.fee.create({data:{name:'Application fee',purpose:'REGISTRATION',amountMinor:1500000n,currency:'NGN'}});
+ await db.setting.upsert({where:{key:'applicationFeePolicy'},create:{key:'applicationFeePolicy',value:{feeId:fee.id}},update:{value:{feeId:fee.id}}});
+ assert.equal((await post(agent,token,'/applicant/invoices/application',{amountMinor:'1'})).status,400);
+ const created=await post(agent,token,'/applicant/invoices/application',{});assert.equal(created.status,201);assert.equal(created.body.amountMinor,'1500000');
+ const again=await post(agent,token,'/applicant/invoices/application',{});assert.equal(again.body.id,created.body.id);
+ const stranger=request.agent(app),strangerCsrf=await csrf(stranger);
+ assert.equal((await post(stranger,strangerCsrf,'/auth/student/login',{studentId:email,password})).status,200);
+ const other=await db.user.create({data:{email:random().slice(0,12)+'@example.test',phone:'',role:'APPLICANT',passwordHash:await argon2.hash(password),mustChangePassword:false}});
+ const foreign=await db.invoice.create({data:{userId:other.id,reference:random(),sourceKey:random(),kind:'APPLICATION',amountMinor:1n,currency:'NGN'}});
+ assert.equal((await agent.get('/applicant/invoices/'+foreign.id)).status,404);
+ const paymentResponse=await post(agent,token,'/applicant/invoices/'+created.body.id+'/payment',{});assert.equal(paymentResponse.status,201);
+ const pay=await db.payment.findUniqueOrThrow({where:{reference:paymentResponse.body.payment.reference}});
+ assert.equal(pay.payerUserId,user.id);assert.equal(pay.studentId,null);
+ const results=await Promise.all(Array.from({length:3},()=>settlePayment(db,config,pay.reference,verified(pay))));
+ assert.equal(new Set(results.map(p=>p.studentId)).size,1);
+ const promoted=await db.user.findUniqueOrThrow({where:{id:user.id},include:{student:true,applicant:true}});
+ assert.equal(promoted.role,'STUDENT');assert.equal(promoted.passwordHash,user.passwordHash);assert.ok(promoted.applicant!.applicationFeeVerifiedAt);
+ assert.equal(await db.student.count({where:{userId:user.id}}),1);assert.equal(await db.receipt.count({where:{paymentId:pay.id}}),1);
+ assert.equal((await db.invoice.findUniqueOrThrow({where:{id:created.body.id}})).status,'PAID');
+ for(const identifier of[email,promoted.student!.studentId]){const a=request.agent(app),c=await csrf(a);assert.equal((await post(a,c,'/auth/student/login',{studentId:identifier,password})).status,200);assert.equal((await a.get('/portal/profile')).status,200);}
+});
+
+test('Phase 2 migration previews without writes and applies repeatably',async()=>{
+ const {migratePhase2}=await import('../src/phase2-migration.js');
+ const before=await db.schemaMigration.count();const dry=await migratePhase2(url);assert.equal(dry.mode,'dry-run');assert.equal(await db.schemaMigration.count(),before);
+ await migratePhase2(url,true);const count=await db.schemaMigration.count();await migratePhase2(url,true);assert.equal(await db.schemaMigration.count(),count);
+});
+

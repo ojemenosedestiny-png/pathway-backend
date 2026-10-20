@@ -28,7 +28,7 @@ import {
 } from "./core.js";
 export interface Principal {
   id: string;
-  role: "STUDENT" | "ADMIN";
+  role: "APPLICANT" | "STUDENT" | "ADMIN";
   studentId?: string;
   adminRole?: AdminRole;
   permissions: { read: string[]; write: string[] };
@@ -49,6 +49,7 @@ export const defaultPermissions: Record<
 > = Object.fromEntries(
   Object.entries({
     SUPER_ADMIN: ["*"],
+    EXAMS_OFFICER: ["dashboard","students","exams","enrolments","documents","announcements"],
     ADMISSIONS: [
       "dashboard",
       "students",
@@ -269,7 +270,7 @@ export async function createPasswordLink(
   const student = await tx.student.findUnique({ where: { userId: user.id } });
   await queue(tx, config, key, "EMAIL", {
     to: user.email,
-    template: "credentials",
+    template: (user as any).role==='APPLICANT'?'applicant-reset':'credentials',
     studentId: student?.studentId,
     link: `${config.FRONTEND_ORIGIN}/set-password#token=${raw}`,
     hours: kind === "SET" ? 24 : 1,
@@ -291,7 +292,7 @@ async function checkPassword(
           include: { admin: true },
         })
       : await db.user.findFirst({
-          where: { student: { studentId: identifier.toUpperCase() } },
+          where: identifier.includes('@')?{email:identifier.toLowerCase(),role:{in:['STUDENT','APPLICANT']}}:{role:'STUDENT',student:{studentId:identifier.toUpperCase()}},
           include: { admin: true },
         });
   const valid = user?.passwordHash
@@ -303,7 +304,7 @@ async function checkPassword(
     const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
     if (
       current.status !== "ACTIVE" ||
-      current.role !== kind ||
+      (kind==='ADMIN'?current.role!=='ADMIN':!['STUDENT','APPLICANT'].includes(current.role)) ||
       current.passwordHash !== user.passwordHash ||
       current.sessionVersion !== user.sessionVersion ||
       (current.lockedUntil && current.lockedUntil > new Date())
@@ -356,7 +357,7 @@ export function authRouter(db: PrismaClient, config: Config) {
       const data = parse(
         z
           .object({
-            studentId: z.string().min(2).max(50),
+            studentId: z.string().min(2).max(254),
             password: z.string().max(128),
             rememberMe: z.boolean().default(false),
           })
@@ -377,6 +378,7 @@ export function authRouter(db: PrismaClient, config: Config) {
           "Complete the emailed password setup link.",
         );
       await issue(db, config, user, res, data.rememberMe);
+      if(user.role==='APPLICANT'){const applicant=await db.applicant.findUniqueOrThrow({where:{userId:user.id}});res.json({role:'APPLICANT',applicant:{applicantNumber:applicant.applicantNumber,emailVerified:!!user.emailVerifiedAt}});return;}
       const student = await db.student.findUniqueOrThrow({
         where: { userId: user.id },
       });
@@ -689,7 +691,7 @@ export function authRouter(db: PrismaClient, config: Config) {
           where: { email: d.email },
           include: { student: true },
         });
-        if (user?.student && user.status === "ACTIVE") {
+        if ((user?.student||(mode==='forgot-password'&&user?.role==='APPLICANT')) && user.status === 'ACTIVE') {
           if (mode === "forgot-password")
             await transaction(db, (tx) =>
               createPasswordLink(
@@ -708,7 +710,7 @@ export function authRouter(db: PrismaClient, config: Config) {
                 (await db.payment.findFirst({
                   where: {
                     reference: d.paymentReference,
-                    studentId: user.student.id,
+                    studentId: user.student!.id,
                     status: "SUCCESS",
                   },
                 })));

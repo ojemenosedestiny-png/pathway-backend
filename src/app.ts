@@ -90,7 +90,10 @@ export function createApp(
     }),
     csrf(config),
   );
+  app.use('/auth',applicantAuthRouter(db,config));
   app.use("/auth", authRouter(db, config));
+  app.use('/applicant/invoices',authentication(db,config),invoiceRouter(db,config));
+  app.use('/applicant',authentication(db,config),applicantRouter(db,config));
   app.use("/public", publicAdmissionsRouter(db));
   app.use("/payments", paymentRouter(db, config, adapters));
   for (const [path, model] of Object.entries({
@@ -249,3 +252,5 @@ export function createApp(
   );
   return app;
 }
+import {applicantAuthRouter,applicantRouter} from './applicants.js';
+import {invoiceRouter} from './invoices.js';

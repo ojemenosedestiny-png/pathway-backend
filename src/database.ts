@@ -29,7 +29,7 @@ function prepare(modelName:string,data:any,creating:boolean):any {
 }
 export function createDatabase(url=databaseUrl()):PrismaClient {
   return new PrismaClient({datasourceUrl:url}).$extends({query:{$allModels:{$allOperations:async({model,operation,args,query}:any)=>{
-    if(['AuditLog','IdReservation'].includes(model)&&['update','updateMany','upsert','delete','deleteMany'].includes(operation))throw new Error(model+' is append-only.');
+    if(['AuditLog','IdReservation','ApplicantNumberReservation'].includes(model)&&['update','updateMany','upsert','delete','deleteMany'].includes(operation))throw new Error(model+' is append-only.');
     if(operation==='create')args.data=prepare(model,args.data,true);
     if(operation==='createMany')args.data=(Array.isArray(args.data)?args.data:[args.data]).map((row:any)=>prepare(model,row,true));
     if(operation==='update'||operation==='updateMany')args.data=prepare(model,args.data,false);
@@ -61,7 +61,7 @@ export async function setupMongoDatabase(url=databaseUrl()){
       }
     }
     const indexes:Record<string,Record<string,1|-1>[]>= {
-      Session:[{userId:1,expiresAt:1}],Student:[{cohort:1}],Application:[{studentId:1,status:1}],Document:[{ownerId:1,status:1}],HostelBooking:[{roomId:1,status:1,arrival:1,departure:1},{status:1,holdExpiresAt:1}],ConsultationSlot:[{advisorId:1,active:1,startsAt:1,endsAt:1}],Announcement:[{status:1,publishAt:1,expireAt:1},{audienceType:1,audienceValue:1},{attachmentIds:1}],Notification:[{userId:1,createdAt:-1}],Payment:[{studentId:1,status:1}],AuditLog:[{actorId:1,at:-1},{entity:1,entityId:1}],Outbox:[{status:1,runAt:1,createdAt:1}],PasswordToken:[{userId:1,usedAt:1}],Thread:[{studentId:1}],Message:[{threadId:1,createdAt:1}],
+      Invoice:[{userId:1,status:1}],EmailVerification:[{userId:1,expiresAt:1}],Session:[{userId:1,expiresAt:1}],Student:[{cohort:1}],Application:[{studentId:1,status:1}],Document:[{ownerId:1,status:1}],HostelBooking:[{roomId:1,status:1,arrival:1,departure:1},{status:1,holdExpiresAt:1}],ConsultationSlot:[{advisorId:1,active:1,startsAt:1,endsAt:1}],Announcement:[{status:1,publishAt:1,expireAt:1},{audienceType:1,audienceValue:1},{attachmentIds:1}],Notification:[{userId:1,createdAt:-1}],Payment:[{studentId:1,status:1}],AuditLog:[{actorId:1,at:-1},{entity:1,entityId:1}],Outbox:[{status:1,runAt:1,createdAt:1}],PasswordToken:[{userId:1,usedAt:1}],Thread:[{studentId:1}],Message:[{threadId:1,createdAt:1}],
     };
     for(const [name,list]of Object.entries(indexes))for(const key of list)await db.collection(name).createIndex(key);
     await db.collection('DatabaseLock').updateOne({_id:'schema:mongodb:v1'} as any,{$setOnInsert:{version:1}},{upsert:true});
@@ -72,4 +72,8 @@ export async function assertDatabaseReady(db:PrismaClient){
   const hello=await db.$runCommandRaw({hello:1});
   if(!hello.setName&&hello.msg!=='isdbgrid')throw new Error('A MongoDB replica set is required.');
   if(!await db.databaseLock.findUnique({where:{key:'schema:mongodb:v1'}}))throw new Error('MongoDB indexes are not provisioned. Run npm run db:setup before starting the API or seed.');
+}
+
+export async function assertPhase2Ready(db:PrismaClient){
+ if(!await db.schemaMigration.findUnique({where:{key:'platform-phase-2-v1'}}))throw new Error('Applicant/invoice migration is required. Preview npm run migrate:phase2, then apply it before starting this release.');
 }

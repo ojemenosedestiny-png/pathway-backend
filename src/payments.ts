@@ -70,6 +70,7 @@ export async function settlePayment(
     let p = await tx.payment.findUnique({ where: { reference } });
     if (!p) fail(404, "PAYMENT_NOT_FOUND", "Payment not found.");
     validateVerification(p, verified);
+    const invoice=p.invoiceId?await (async()=>{await lock(tx,'Invoice:'+p!.invoiceId);const row=await tx.invoice.findUniqueOrThrow({where:{id:p!.invoiceId!}});if(row.status==='VOID'||row.amountMinor!==p!.amountMinor||row.currency!==p!.currency||row.userId!==p!.payerUserId)fail(409,'INVOICE_MISMATCH','This payment does not match an open invoice.');if(row.status==='PAID'&&p!.status!=='SUCCESS'&&p!.status!=='REFUNDED')fail(409,'INVOICE_ALREADY_PAID','This invoice already has a verified payment.');if(row.kind==='APPLICATION'&&p!.purpose!=='REGISTRATION')fail(409,'INVOICE_PURPOSE','Application invoices require a registration payment.');return row;})():null;
     if (p.status === "SUCCESS" || p.status === "REFUNDED") return p;
     if (verified.status !== "SUCCESS") {
       if (verified.status === "FAILED")
@@ -79,14 +80,22 @@ export async function settlePayment(
         });
       return p;
     }
+    if(p.payerUserId)await lock(tx,"User:"+p.payerUserId);
     let studentId = p.studentId;
     if (["REGISTRATION", "ENROLMENT"].includes(p.purpose) && !studentId) {
       let user = await tx.user.findUnique({
         where: { email: p.payerEmail },
-        include: { student: true },
+        include: { student: true,applicant:true },
       });
       if (user) {
-        fail(
+        if(invoice?.kind==='APPLICATION'&&user.id===invoice.userId&&user.role==='APPLICANT'&&user.status==='ACTIVE'&&user.emailVerifiedAt&&user.applicant&&!user.student){
+          const publicId=await allocateStudentId(tx,config);
+          user=await tx.user.update({where:{id:user.id},data:{role:'STUDENT',student:{create:{studentId:publicId,firstName:user.applicant.firstName,lastName:user.applicant.lastName,milestones:[{stage:'Application fee verified',at:new Date().toISOString()}]}}},include:{student:true,applicant:true}});
+          studentId=user.student!.id;
+          await tx.applicant.update({where:{userId:user.id},data:{applicationFeeVerifiedAt:new Date()}});
+          await queue(tx,config,'student-id-issued:'+user.id,'EMAIL',{to:user.email,title:'Your NewworldPathway Student ID',body:'Your application fee has been verified. Your Student ID is '+publicId+'. Sign in with your email address or Student ID and your existing password.'});
+          await audit(tx,actor,'APPLICANT_PROMOTED','User',user.id,ip,undefined,{studentId:publicId,invoiceId:invoice.id});
+        }else fail(
           409,
           "IDENTITY_CONFLICT",
           "Admissions must review the applicant identity.",
@@ -110,7 +119,7 @@ export async function settlePayment(
               },
             },
           },
-          include: { student: true },
+          include: { student: true,applicant:true },
         });
         studentId = user.student!.id;
         await createPasswordLink(
@@ -174,6 +183,7 @@ export async function settlePayment(
         rawPayload: verified.payload as Prisma.InputJsonValue,
       },
     });
+    if(invoice)await tx.invoice.update({where:{id:invoice.id},data:{status:'PAID',paidAt:new Date()}});
     await tx.receipt.upsert({
       where: { paymentId: p.id },
       update: {},
@@ -247,6 +257,7 @@ export function paymentRouter(
         user = await db.user.findUniqueOrThrow({
           where: { id: req.principal!.id },
         });
+        if(user.role==='APPLICANT')fail(403,'APPLICATION_INVOICE_REQUIRED','Use your account’s application-fee invoice. Other payments unlock after it is verified.');
       }
       let amountMinor: bigint, currency: string, purpose: any;
       let fee: any, booking: any;
@@ -398,7 +409,8 @@ export function paymentRouter(
       ),
     );
     if (
-      req.principal.studentId !== p.studentId &&
+      !(p.payerUserId&&req.principal.id===p.payerUserId)&&
+      !(p.studentId&&req.principal.studentId===p.studentId)&&
       !(
         req.principal.role === "ADMIN" &&
         (req.principal.adminRole === "SUPER_ADMIN" ||

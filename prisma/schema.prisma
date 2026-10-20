@@ -6,6 +6,7 @@ datasource db {
  url = env("DATABASE_URL")
 }
 enum UserRole {
+ APPLICANT
  STUDENT
  ADMIN
 }
@@ -15,6 +16,7 @@ enum UserStatus {
  DELETED
 }
 enum AdminRole {
+ EXAMS_OFFICER
  SUPER_ADMIN
  ADMISSIONS
  FINANCE
@@ -53,6 +55,7 @@ model User {
  role UserRole
  email String @unique
  phone String
+ emailVerifiedAt DateTime?
  passwordHash String?
  status UserStatus @default(ACTIVE)
  twoFactorSecret String?
@@ -64,6 +67,8 @@ model User {
  sessionVersion Int @default(1)
  createdAt DateTime @default(now())
  student Student?
+ applicant Applicant?
+ emailVerifications EmailVerification[]
  admin Admin?
  sessions Session[]
  tokens PasswordToken[]
@@ -72,6 +77,62 @@ model User {
  notifications Notification[]
  reads AnnouncementRead[]
  messages Message[]
+}
+model Applicant {
+ id String @id @default(uuid()) @map("_id")
+ userId String @unique
+ user User @relation(fields:[userId],references:[id])
+ applicantNumber String @unique
+ firstName String @default("")
+ lastName String @default("")
+ applicationFeeVerifiedAt DateTime?
+ createdAt DateTime @default(now())
+}
+model ApplicantNumberReservation {
+ number String @id @map("_id")
+ issuedAt DateTime @default(now())
+}
+model EmailVerification {
+ id String @id @default(uuid()) @map("_id")
+ userId String
+ user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+ hash String @unique
+ expiresAt DateTime
+ usedAt DateTime?
+ createdAt DateTime @default(now())
+ @@index([userId,expiresAt])
+}
+model Invoice {
+ id String @id @default(uuid()) @map("_id")
+ reference String @unique
+ userId String
+ kind String
+ sourceKey String @unique
+ status String @default("OPEN")
+ amountMinor BigInt
+ currency String
+ feeId String?
+ examId String?
+ bookingId String?
+ paidAt DateTime?
+ createdAt DateTime @default(now())
+ items InvoiceItem[]
+ payments Payment[]
+ @@index([userId,status])
+}
+model InvoiceItem {
+ id String @id @default(uuid()) @map("_id")
+ invoiceId String
+ invoice Invoice @relation(fields:[invoiceId],references:[id])
+ description String
+ amountMinor BigInt
+ currency String
+ sourceId String
+}
+model SchemaMigration {
+ key String @id @map("_id")
+ appliedAt DateTime @default(now())
+ result Json
 }
 model Student {
  id String @id @default(uuid()) @map("_id")
@@ -303,6 +364,8 @@ model HostelBooking {
  departure DateTime
  bed Int
  amountMinor BigInt
+ roomAmountMinor BigInt?
+ depositAmountMinor BigInt?
  payments Payment[]
  createdAt DateTime @default(now())
  @@index([roomId,term,status])
@@ -348,6 +411,9 @@ model Payment {
  payerName String
  statusTokenHash String
  studentId String?
+ payerUserId String?
+ invoiceId String?
+ invoice Invoice? @relation(fields:[invoiceId],references:[id])
  student Student? @relation(fields:[studentId],references:[id])
  feeId String?
  examId String?

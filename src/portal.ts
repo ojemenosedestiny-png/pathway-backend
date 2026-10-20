@@ -64,6 +64,8 @@ export async function reserveBed(
         studentId,
         bed,
         amountMinor: room.priceMinor + room.depositMinor,
+        roomAmountMinor:room.priceMinor,
+        depositAmountMinor:room.depositMinor,
         holdExpiresAt: new Date(Date.now() + 15 * 60000),
       },
     });
