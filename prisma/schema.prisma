@@ -141,6 +141,36 @@ model AuthChallenge {
  attempts Int @default(0)
  usedAt DateTime?
 }
+model CatalogueEntry {
+ id String @id @default(uuid()) @map("_id")
+ slug String @unique
+ kind String
+ name String
+ summary String
+ image String @default("")
+ countryCode String @default("")
+ category String @default("")
+ level String @default("")
+ whoFor String @default("")
+ provision String @default("")
+ route String @default("")
+ intakes String @default("")
+ disclaimer String @default("")
+ amountMinor BigInt?
+ currency String @default("NGN")
+ deadline DateTime?
+ session String @default("")
+ subjects String[] @default([])
+ requiredDocuments String[] @default([])
+ gender String @default("")
+ roomType String @default("")
+ availability String @default("Confirm with the school")
+ demo Boolean @default(false)
+ status String @default("DRAFT")
+ order Int @default(0)
+ updatedAt DateTime @updatedAt
+ @@index([kind,status,order])
+}
 model Country {
  id String @id @default(uuid()) @map("_id")
  name String @unique

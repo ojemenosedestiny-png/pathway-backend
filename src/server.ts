@@ -12,6 +12,7 @@ const db = createDatabase();
 await db.$connect();
 await assertDatabaseReady(db);
 await ensureAdmissionCollection(db);
+await ensureCatalogueCollection(db);
 const server = createApp(db, config).listen(config.PORT, () =>
   log.info({ port: config.PORT }, "API listening"),
 );
@@ -34,3 +35,4 @@ async function stop() {
 }
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);
+import {ensureCatalogueCollection} from './catalogue.js';

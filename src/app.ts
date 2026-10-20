@@ -92,6 +92,7 @@ export function createApp(
   );
   app.use("/auth", authRouter(db, config));
   app.use("/public", publicAdmissionsRouter(db));
+  app.use('/public',publicCatalogueRouter(db));
   app.use("/payments", paymentRouter(db, config, adapters));
   for (const [path, model] of Object.entries({
     countries: "country",
@@ -249,3 +250,4 @@ export function createApp(
   );
   return app;
 }
+import {publicCatalogueRouter} from './catalogue.js';

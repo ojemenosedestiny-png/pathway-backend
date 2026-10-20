@@ -229,6 +229,7 @@ export function adminRouter(
       );
   };
   r.use(adminAdmissionsRouter(db));
+  r.use(adminCatalogueRouter(db));
   r.get(
     "/media",
     moduleGuard("media"),
@@ -1691,3 +1692,4 @@ export function adminRouter(
   );
   return r;
 }
+import {adminCatalogueRouter} from './catalogue.js';
