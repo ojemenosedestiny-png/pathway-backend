@@ -1,3 +1,4 @@
+import {trustAdminRouter} from './trust-content.js';
 import {adminAdmissionsRouter} from './admissions.js';
 import {guardCatalogWrite,guardCatalogDelete} from "./catalog-integrity.js";
 import {lock} from "./database.js";
@@ -209,6 +210,7 @@ export function adminRouter(
   adapters: Partial<Record<Provider, PaymentProvider>>,
 ) {
   const r = Router();
+  r.use('/trust',trustAdminRouter(db));
   r.use((req, res, next) =>
     req.principal?.role === "ADMIN"
       ? next()

@@ -1,3 +1,4 @@
+import {requirePreparation} from './trust-content.js';
 import {lock} from "./database.js";
 import { Router } from "express";
 import {
@@ -196,6 +197,7 @@ export async function settlePayment(
     await queue(tx, config, `receipt:${p.id}`, "EMAIL", {
       to: student.user.email,
       template: "receipt",
+      purpose:p.purpose,
       reference: p.reference,
       studentId: student.studentId,
       amountMinor: p.amountMinor.toString(),
@@ -285,7 +287,8 @@ export function paymentRouter(
       } else {
         if (!studentId) fail(401, "AUTH_REQUIRED", "Sign in first.");
         const exam = await db.exam.findUnique({ where: { id: d.examId } });
-        if (!exam?.active) fail(404, "EXAM_NOT_FOUND", "Exam unavailable.");
+        if (!exam?.active) fail(404, "EXAM_NOT_FOUND", "Preparation programme unavailable.");
+        await requirePreparation(db,exam);
         if (
           exam.opensAt > new Date() ||
           exam.closesAt < new Date() ||
@@ -545,7 +548,7 @@ export function paymentRouter(
         `Student: ${p.payerName}`,
         `Student ID: ${receipt.payment.student?.studentId || ""}`,
         `Amount: ${p.currency} ${(Number(p.amountMinor) / 100).toFixed(2)}`,
-        `Purpose: ${p.purpose}`,
+        `Purpose: ${p.purpose==="EXAM"?"Exam preparation":p.purpose}`,
         `Status: ${p.status}`,
       ])
         pdf.text(line);

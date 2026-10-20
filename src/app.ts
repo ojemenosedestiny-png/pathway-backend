@@ -1,3 +1,4 @@
+import {trustPublicRouter} from './trust-content.js';
 import {publicAdmissionsRouter} from './admissions.js';
 import express from "express";
 import cookieParser from "cookie-parser";
@@ -94,6 +95,7 @@ export function createApp(
   app.use("/auth", authRouter(db, config));
   app.use('/applicant/invoices',authentication(db,config),invoiceRouter(db,config));
   app.use('/applicant',authentication(db,config),applicantRouter(db,config));
+  app.use("/public", trustPublicRouter(db));
   app.use("/public", publicAdmissionsRouter(db));
   app.use("/payments", paymentRouter(db, config, adapters));
   for (const [path, model] of Object.entries({

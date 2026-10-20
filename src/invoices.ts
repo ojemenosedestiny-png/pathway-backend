@@ -1,3 +1,4 @@
+import {requirePreparation} from './trust-content.js';
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
@@ -133,6 +134,7 @@ export async function createInvoice(
           "EXAM_UNAVAILABLE",
           "This examination is not open for enrolment.",
         );
+      await requirePreparation(tx,exam);
       const enrolment = await tx.examEnrolment.findUnique({
         where: {
           studentId_examId: { studentId: user.student!.id, examId: sourceId },
@@ -147,7 +149,7 @@ export async function createInvoice(
       examId = exam.id;
       items = [
         {
-          description: exam.name,
+          description: exam.name+' - exam preparation',
           amountMinor: exam.feeMinor,
           currency: exam.currency,
           sourceId: exam.id,

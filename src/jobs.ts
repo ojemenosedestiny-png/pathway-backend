@@ -26,7 +26,7 @@ async function email(config: Config, key: string, d: any) {
       : d.template === "recover"
         ? `<p>Your Student ID: <strong>${escape(d.studentId)}</strong></p>`
         : d.template === "receipt"
-          ? `<p>Payment verified: ${escape(d.reference)}</p><p>${escape(d.currency)} ${escape((Number(d.amountMinor) / 100).toFixed(2))}</p><p>Sign in to download your receipt.</p>`
+          ? `<p>Payment verified: ${escape(d.reference)}</p>${d.purpose==='EXAM'?'<p>Exam preparation payment. Official exam registration is confirmed separately.</p>':''}<p>${escape(d.currency)} ${escape((Number(d.amountMinor) / 100).toFixed(2))}</p><p>Sign in to download your receipt.</p>`
           : `<p>${escape(d.body || "You have a new update in your portal.")}</p>`;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",

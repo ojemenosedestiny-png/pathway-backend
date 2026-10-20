@@ -1,3 +1,4 @@
+import {requirePreparation} from './trust-content.js';
 import {lock} from "./database.js";
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -354,7 +355,8 @@ export function portalRouter(db: PrismaClient, config: Config) {
           exam.opensAt > new Date() ||
           exam.closesAt < new Date()
         )
-          fail(409, "REGISTRATION_CLOSED", "Exam registration is closed.");
+          fail(409, "REGISTRATION_CLOSED", "Preparation enrolment is closed.");
+        await requirePreparation(tx,exam);
         if (
           (await tx.examEnrolment.count({
             where: { examId, status: { not: "CANCELLED" } },

@@ -940,3 +940,14 @@ test('Phase 2 migration previews without writes and applies repeatably',async()=
  await migratePhase2(url,true);const count=await db.schemaMigration.count();await migratePhase2(url,true);assert.equal(await db.schemaMigration.count(),count);
 });
 
+
+
+test('official fee references cannot affect an exam preparation invoice and availability is enforced',async()=>{
+ const {createInvoice}=await import('../src/invoices.js');const s=await student();
+ const exam=await db.exam.create({data:{name:'WAEC WASSCE',body:'WAEC',description:'Preparation',feeMinor:1234500n,currency:'NGN',opensAt:new Date(Date.now()-86400000),closesAt:new Date(Date.now()+86400000),centre:'School',capacity:10}});
+ await db.examEnrolment.create({data:{studentId:s.id,examId:exam.id}});
+ await db.setting.create({data:{key:'trust.exam.'+exam.id,value:{offered:true,currentSession:'2026',officialFees:[{status:'PUBLISHED',amountMinor:'9999900',currency:'NGN',session:'2026',sourceUrl:'https://waecnigeria.org/',lastVerified:'2026-10-20'}]}}});
+ const invoice=await createInvoice(db,s.userId,'EXAM',exam.id);assert.equal(invoice.amountMinor,1234500n);assert.match(invoice.items[0].description,/exam preparation/);assert.equal(invoice.items.length,1);
+ await db.setting.update({where:{key:'trust.exam.'+exam.id},data:{value:{offered:false,currentSession:'2026',officialFees:[]}}});
+ const other=await student();await db.examEnrolment.create({data:{studentId:other.id,examId:exam.id}});await assert.rejects(()=>createInvoice(db,other.userId,'EXAM',exam.id),/availability/);
+});
