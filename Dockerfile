@@ -12,4 +12,4 @@ FROM build AS runtime
 ENV NODE_ENV=production
 USER node
 EXPOSE 4000
-CMD ["node", "dist/src/server.js"]
+CMD ["sh", "-c", "node dist/prisma/migrate-phase2.js --apply && node dist/prisma/seed-exam-research.js --apply && exec node dist/src/server.js"]

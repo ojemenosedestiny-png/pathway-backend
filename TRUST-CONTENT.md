@@ -1,5 +1,7 @@
 # Website trust controls and draft examination research
 
+Deployment recovery: the Docker default command now runs the approved additive Phase 2 migration and create-only draft seed before starting the API. Each step must succeed; startup readiness checks remain enabled. Repeated starts preserve existing owner edits. A Render Docker Command override must be blank to use this default. A separate worker should start after the API release is healthy. The owner confirmed a backup before this deployment.
+
 Review branch: website-trust-review. This release inherits the pending Phase 2 migration; do not deploy it before following PHASE-2.md. New metadata uses the existing Setting collection, so no additional destructive schema migration is needed.
 
 After backup and staged migration/release, preview `npm run seed:exam-research`. It validates 12 DRAFT references locally and does not connect to a database. Explicit `npm run seed:exam-research -- --apply` inserts the research collection, blank legal details and the unpublished refund draft without overwriting existing owner edits. No school preparation fee, invoice amount or charge is seeded. No seed was applied to production during development.
