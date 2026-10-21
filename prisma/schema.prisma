@@ -588,3 +588,19 @@ model DatabaseLock {
  key String @id @map("_id")
  version Int @default(0)
 }
+
+model ConsultationRequest {
+ id String @id @map("_id")
+ reference String
+ requestHash String
+ name String
+ email String
+ phone String
+ topic String
+ preferredTime String
+ status String @default("NEW")
+ reviewNotes String @default("")
+ consentAt DateTime
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+}

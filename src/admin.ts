@@ -1,3 +1,4 @@
+import {adminConsultationsRouter} from './consultation-requests.js';
 import {trustAdminRouter} from './trust-content.js';
 import {adminAdmissionsRouter} from './admissions.js';
 import {guardCatalogWrite,guardCatalogDelete} from "./catalog-integrity.js";
@@ -231,6 +232,7 @@ export function adminRouter(
       );
   };
   r.use(adminAdmissionsRouter(db,config));
+  r.use(adminConsultationsRouter(db));
   r.use(admissionPolicyRouter(db));
   r.get(
     "/media",
