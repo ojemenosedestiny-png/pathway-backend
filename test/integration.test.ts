@@ -893,6 +893,37 @@ test("public admissions persist once under concurrency without creating portal a
 });
 
 
+test('accepted guest gets one Student ID and one usable password link, without a payment',async()=>{
+ const {provisionAdmissionStudent}=await import('../src/admissions.js');
+ const id=crypto.randomUUID(),email='approved-'+id+'@example.test';
+ const application={id,email,phone:'+2348000000000',firstName:'Approved',lastName:'Applicant',reference:'APP-'+id};
+ const paymentsBefore=await db.payment.count(),studentsBefore=await db.student.count();
+ const results=await Promise.all(Array.from({length:5},()=>transaction(db,tx=>provisionAdmissionStudent(tx,config,application))));
+ assert.equal(new Set(results.map(r=>r.studentId)).size,1);assert.equal(await db.student.count(),studentsBefore+1);assert.equal(await db.payment.count(),paymentsBefore);
+ const user=await db.user.findUniqueOrThrow({where:{email},include:{student:true}});assert.equal(user.role,'STUDENT');assert.equal(user.passwordHash,null);assert.equal(user.student!.journeyStage,'Registration in progress');
+ const key='admission-portal:'+id;assert.equal(await db.outbox.count({where:{key}}),1);assert.equal(await db.passwordToken.count({where:{userId:user.id,usedAt:null}}),1);
+ const job=await db.outbox.findUniqueOrThrow({where:{key}});const payload=unseal<any>(job.payload,config);assert.equal(payload.studentId,results[0].studentId);assert.equal(payload.template,'credentials');assert.equal(payload.to,email);assert.equal(payload.password,undefined);
+ const token=new URL(payload.link).hash.slice('#token='.length),password='Approved-student-passphrase-2046';
+ const agent=request.agent(app),csrfToken=await csrf(agent);
+ assert.equal((await post(agent,csrfToken,'/auth/set-password',{token,password})).status,200);
+ assert.equal((await post(agent,csrfToken,'/auth/set-password',{token,password})).status,410);
+ assert.equal((await post(agent,csrfToken,'/auth/student/login',{studentId:results[0].studentId,password})).status,200);
+ assert.equal((await agent.get('/portal/profile')).status,200);
+ const hash=(await db.user.findUniqueOrThrow({where:{email}})).passwordHash;
+ await transaction(db,tx=>provisionAdmissionStudent(tx,config,application));assert.equal((await db.user.findUniqueOrThrow({where:{email}})).passwordHash,hash);assert.equal(await db.outbox.count({where:{key}}),1);
+});
+
+test('an application invoice remains payable after admissions issues the student ID',async()=>{
+ const {provisionAdmissionStudent}=await import('../src/admissions.js');const id=crypto.randomUUID(),email='early-'+id+'@example.test';
+ const user=await db.user.create({data:{email,phone:'+2348000000000',role:'APPLICANT',emailVerifiedAt:new Date(),passwordHash:'existing-password-hash',applicant:{create:{applicantNumber:'APP-'+id,firstName:'Early',lastName:'Applicant'}}}});
+ const payment=await invoice(email);const bill=await db.invoice.create({data:{reference:'INV-'+id,userId:user.id,kind:'APPLICATION',sourceKey:id,amountMinor:payment.amountMinor,currency:payment.currency}});
+ const pending=await db.payment.update({where:{id:payment.id},data:{payerUserId:user.id,invoiceId:bill.id}});
+ const provisioned=await transaction(db,tx=>provisionAdmissionStudent(tx,config,{id,email,phone:user.phone,firstName:'Early',lastName:'Applicant',reference:'APP-'+id}));
+ assert.equal((await db.user.findUniqueOrThrow({where:{id:user.id}})).passwordHash,'existing-password-hash');
+ const settled=await settlePayment(db,config,pending.reference,verified(pending));
+ const student=await db.student.findUniqueOrThrow({where:{userId:user.id}});assert.equal(student.studentId,provisioned.studentId);assert.equal(settled.studentId,student.id);assert.equal((await db.invoice.findUniqueOrThrow({where:{id:bill.id}})).status,'PAID');assert.equal(await db.student.count({where:{userId:user.id}}),1);
+});
+
 test('Phase 2: verified applicants promote atomically, retaining their password and identity', async()=>{
  const email=random().slice(0,12)+'@example.test', password='Applicant-passphrase-2046';
  const agent=request.agent(app), token=await csrf(agent);

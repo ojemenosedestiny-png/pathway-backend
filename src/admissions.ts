@@ -1,8 +1,28 @@
 import {Router} from 'express';
-import {PrismaClient} from '@prisma/client';
+import {PrismaClient,Prisma} from '@prisma/client';
 import {z} from 'zod';
 import {wrap,parse,rate,digest,transaction,audit,fail,pageSchema,idSchema,queue,type Config} from './core.js';
-import {moduleGuard} from './auth.js';
+import {moduleGuard,createPasswordLink} from './auth.js';
+import {allocateStudentId} from './payments.js';
+import {lock} from './database.js';
+
+export async function provisionAdmissionStudent(tx:Prisma.TransactionClient,config:Config,application:{id:string;email:string;phone:string;firstName:string;lastName:string;reference:string}){
+ await lock(tx,'AdmissionStudentEmail:'+application.email);
+ let user=await tx.user.findUnique({where:{email:application.email},include:{student:true}});
+ if(user&&(user.role==='ADMIN'||user.status!=='ACTIVE'))fail(409,'ACCOUNT_CONFLICT','This email belongs to a staff or inactive account. Confirm the applicant’s details before approving.');
+ if(user?.role==='APPLICANT'&&!user.emailVerifiedAt)fail(409,'EMAIL_UNVERIFIED','Ask the applicant to verify their existing account email before approving this application.');
+ if(!user?.student){
+  const studentId=await allocateStudentId(tx,config);
+  const student={studentId,firstName:application.firstName,lastName:application.lastName,journeyStage:'Registration in progress',milestones:[{stage:'Application accepted',at:new Date().toISOString()}]};
+  user=user?await tx.user.update({where:{id:user.id},data:{role:'STUDENT',student:{create:student}},include:{student:true}}):await tx.user.create({data:{role:'STUDENT',email:application.email,phone:application.phone,student:{create:student}},include:{student:true}});
+ }
+ const key='admission-portal:'+application.id;
+ if(!await tx.outbox.findUnique({where:{key}})){
+  if(!user.passwordHash)await createPasswordLink(tx,config,user,'SET',key);
+  else await queue(tx,config,key,'EMAIL',{to:user.email,template:'status',title:'Your NewworldPathway student portal is ready',body:`Your application ${application.reference} has been accepted. Your Student ID is ${user.student!.studentId}. Continue registration at ${new URL('/student/login',config.FRONTEND_ORIGIN).href} using your existing password. Approval does not confirm payment or official exam registration.`});
+ }
+ return {studentId:user.student!.studentId};
+}
 
 export const admissionProgrammes=['Cambridge Curriculum','Nigerian Curriculum','Cambridge International Examination - Year 8','Checkpoint (Cambridge)','IGCSE - JSS 3','BECE - ERC / NECO - JSS 3','SSCE - WAEC','SSCE - NECO','SAT','HMB (Pre-Degree)'] as const;
 export const admissionSchema=z.object({
@@ -42,10 +62,7 @@ export function adminAdmissionsRouter(db:PrismaClient,config:Config){const r=Rou
  r.patch('/applicants/:id/status',moduleGuard('applications',true),wrap(async(req,res)=>{
   const id=parse(idSchema,req.params.id);const data=parse(z.object({status:z.enum(['UNDER_REVIEW','NEEDS_INFORMATION','ACCEPTED','REJECTED']),comment:z.string().trim().min(1).max(2000)}).strict(),req.body);
   const item=await transaction(db,async tx=>{const before=await tx.admissionApplication.findUniqueOrThrow({where:{id}});const after=await tx.admissionApplication.update({where:{id},data:{status:data.status,reviewNotes:data.comment,reviewedBy:req.principal!.id}});
-   if(after.status==='ACCEPTED')await queue(tx,config,'admission-accepted:'+id,'EMAIL',{
-    to:after.email,template:'status',title:'Your NewworldPathway application has been accepted',
-    body:`Hello ${after.firstName}. The school has accepted your application for ${after.programme}. Your application reference is ${after.reference}. Contact admissions to confirm your registration requirements and preparation fees: ${new URL('/contact',config.FRONTEND_ORIGIN).href}. Acceptance alone does not create a Student ID or portal account. These are issued separately after confirmed registration. This is exam preparation; official exam registration is confirmed separately.`,
-   });
-   await audit(tx,req.principal!.id,'ADMISSION_REVIEWED','AdmissionApplication',id,req.ip||'',{status:before.status},{status:after.status,comment:data.comment});return receipt(after);});res.json(item);
+   const portal=after.status==='ACCEPTED'?await provisionAdmissionStudent(tx,config,after):{};
+   await audit(tx,req.principal!.id,'ADMISSION_REVIEWED','AdmissionApplication',id,req.ip||'',{status:before.status},{status:after.status,comment:data.comment,...portal});return {...receipt(after),...portal};});res.json(item);
  }));return r;
 }

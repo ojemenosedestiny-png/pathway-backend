@@ -89,7 +89,10 @@ export async function settlePayment(
         include: { student: true,applicant:true },
       });
       if (user) {
-        if(invoice?.kind==='APPLICATION'&&user.id===invoice.userId&&user.role==='APPLICANT'&&user.status==='ACTIVE'&&user.emailVerifiedAt&&user.applicant&&!user.student){
+        if(invoice?.kind==='APPLICATION'&&user.id===invoice.userId&&user.role==='STUDENT'&&user.status==='ACTIVE'&&user.emailVerifiedAt&&user.applicant&&user.student){
+          studentId=user.student.id;
+          await tx.applicant.update({where:{userId:user.id},data:{applicationFeeVerifiedAt:new Date()}});
+        }else if(invoice?.kind==='APPLICATION'&&user.id===invoice.userId&&user.role==='APPLICANT'&&user.status==='ACTIVE'&&user.emailVerifiedAt&&user.applicant&&!user.student){
           const publicId=await allocateStudentId(tx,config);
           user=await tx.user.update({where:{id:user.id},data:{role:'STUDENT',student:{create:{studentId:publicId,firstName:user.applicant.firstName,lastName:user.applicant.lastName,milestones:[{stage:'Application fee verified',at:new Date().toISOString()}]}}},include:{student:true,applicant:true}});
           studentId=user.student!.id;
