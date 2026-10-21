@@ -85,8 +85,8 @@ export function fileRouter(db: PrismaClient, config: Config) {
         if (!(await db.student.findUnique({ where: { userId: ownerId } })))
           fail(422, "STUDENT_REQUIRED", "Target owner must be a student.");
       }
-      if (!config.SCANNER_URL || !config.SCANNER_TOKEN || (d.public && !config.PUBLIC_MEDIA_BASE))
-        fail(503, "STORAGE_UNCONFIGURED", "The owner must configure file storage, public media delivery and security scanning on Render before uploading.");
+      const missing=[!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',!config.SCANNER_URL&&'SCANNER_URL',!config.SCANNER_TOKEN&&'SCANNER_TOKEN',d.public&&!config.PUBLIC_MEDIA_BASE&&'PUBLIC_MEDIA_BASE'].filter(Boolean);
+      if(missing.length)fail(503,"STORAGE_UNCONFIGURED",p.role==='ADMIN'?'Uploads are not configured on the backend Render service. Missing settings: '+missing.join(', ')+'. Configure storage and the real scanner, then redeploy.':'Photo and document uploads are temporarily unavailable. Please contact the school to complete upload setup. Your account is unaffected.');
       storage(config);
       const file = await transaction(db, async (tx) => {
         const item = await tx.document.create({
