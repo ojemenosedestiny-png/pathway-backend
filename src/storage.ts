@@ -25,10 +25,15 @@ import {
 export function storage(config: Config) {
   if (!config.S3_BUCKET || !config.S3_ACCESS_KEY || !config.S3_SECRET_KEY)
     fail(503, "STORAGE_UNCONFIGURED", "File storage is unavailable.");
+  if(config.S3_REGION==='auto'&&!config.S3_ENDPOINT)
+    fail(503,"STORAGE_UNCONFIGURED","Cloudflare R2 endpoint is missing. Set S3_ENDPOINT on the backend service before uploading.");
   return new S3Client({
     region: config.S3_REGION,
     endpoint: config.S3_ENDPOINT,
     forcePathStyle: !!config.S3_ENDPOINT,
+    // The browser supplies the body later; do not sign a checksum of an empty body.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+
     credentials: {
       accessKeyId: config.S3_ACCESS_KEY,
       secretAccessKey: config.S3_SECRET_KEY,
@@ -87,7 +92,7 @@ export function fileRouter(db: PrismaClient, config: Config) {
         if (!(await db.student.findUnique({ where: { userId: ownerId } })))
           fail(422, "STUDENT_REQUIRED", "Target owner must be a student.");
       }
-      const missing=[!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',d.public&&!config.PUBLIC_MEDIA_BASE&&'PUBLIC_MEDIA_BASE'].filter(Boolean);
+      const missing=[config.S3_REGION==='auto'&&!config.S3_ENDPOINT&&'S3_ENDPOINT',!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',d.public&&!config.PUBLIC_MEDIA_BASE&&'PUBLIC_MEDIA_BASE'].filter(Boolean);
       if(missing.length)fail(503,"STORAGE_UNCONFIGURED",p.role==='ADMIN'?'Uploads are not configured on the backend Render service. Missing settings: '+missing.join(', ')+'. Configure storage, then redeploy.':'Photo and document uploads are temporarily unavailable. Please contact the school to complete upload setup. Your account is unaffected.');
       storage(config);
       const file = await transaction(db, async (tx) => {

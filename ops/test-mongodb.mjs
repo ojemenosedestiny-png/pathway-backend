@@ -1,8 +1,9 @@
+import {readdirSync} from 'node:fs';
 import {spawn,execFileSync} from 'node:child_process';
 import crypto from 'node:crypto';
 import net from 'node:net';
 const runTests=(uri)=>new Promise((resolve,reject)=>{
-  const child=spawn(process.execPath,['--import','tsx','--test','test/file-validation.test.ts','test/upload-configuration.test.ts','test/consultation-requests.test.ts','test/configuration.test.ts','test/job-runner.test.ts','test/phase2.test.ts','test/trust-content.test.ts','test/integration.test.ts'],{stdio:'inherit',env:{...process.env,TEST_MONGODB_URI:uri},windowsHide:true});child.on('error',reject);child.on('exit',code=>resolve(code??1));
+  const child=spawn(process.execPath,['--import','tsx','--test',...readdirSync('test').filter(name=>name.endsWith('.test.ts')).sort().map(name=>'test/'+name)],{stdio:'inherit',env:{...process.env,TEST_MONGODB_URI:uri},windowsHide:true});child.on('error',reject);child.on('exit',code=>resolve(code??1));
 });
 if(process.env.TEST_MONGODB_URI){process.exitCode=await runTests(process.env.TEST_MONGODB_URI);}
 else{

@@ -22,9 +22,9 @@ test('another student cannot inspect uploads; content editors can inspect public
  assert.equal((await request(app(file,{id:'editor',role:'ADMIN',adminRole:'CONTENT_EDITOR',permissions:{read:['media'],write:[]}})).get('/'+id+'/status')).status,200);
  assert.equal((await request(app({...file,public:false},{id:'editor',role:'ADMIN',adminRole:'CONTENT_EDITOR',permissions:{read:['media'],write:[]}})).get('/'+id+'/status')).status,404);
 });
-test('videos are media-only, images keep 10 MB limit and setup failure is explicit',async()=>{
+test('unsupported videos are rejected, images keep 10 MB limit and setup failure is explicit',async()=>{
  const body={filename:'clip.mp4',mime:'video/mp4',size:1024,type:'OTHER',public:false};
- assert.equal((await request(app(null)).post('/upload-url').send(body)).status,422);
+ assert.equal((await request(app(null)).post('/upload-url').send(body)).status,400);
  assert.equal((await request(app(null)).post('/upload-url').send({...body,mime:'image/png',size:11*1024*1024})).status,422);
  assert.equal((await request(app(null)).post('/upload-url').send({...body,mime:'image/png'})).status,503);
  assert.equal((await request(app(null)).post('/upload-url').send({...body,size:51*1024*1024})).status,400);
