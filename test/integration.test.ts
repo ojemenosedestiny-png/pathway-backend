@@ -1,3 +1,4 @@
+import {PDFDocument} from 'pdf-lib';
 import {submitAdmission,admissionSchema,ensureAdmissionCollection} from '../src/admissions.js';
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -789,7 +790,7 @@ test("scanned private uploads move away from replayable upload URLs", async () =
     ).status,
     200,
   );
-  const bytes = Buffer.from("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF");
+  const pdf=await PDFDocument.create();pdf.addPage();const bytes=Buffer.from(await pdf.save());
   const start = await post(agent, token, "/files/upload-url", {
     filename: "result.pdf",
     mime: "application/pdf",
@@ -814,7 +815,7 @@ test("scanned private uploads move away from replayable upload URLs", async () =
       if (command instanceof GetObjectCommand)
         return {
           ContentLength: bytes.length,
-          Body: { transformToByteArray: async () => bytes },
+          Body: { transformToByteArray: async () => bytes,async *[Symbol.asyncIterator](){yield bytes;} },
         };
       if (command instanceof PutObjectCommand) {
         writes.push(command.input);
@@ -827,32 +828,13 @@ test("scanned private uploads move away from replayable upload URLs", async () =
       (await post(agent, token, "/files/" + file.id + "/complete", {})).status,
       202,
     );
-    await assert.rejects(() =>
-      runJob(
-        db,
-        { ...cfg, SCANNER_URL: undefined },
-        "SCAN",
-        "scan:" + file.id,
-        { id: file.id },
-      ),
-    );
-    assert.equal(
-      (await db.document.findUniqueOrThrow({ where: { id: file.id } })).status,
-      "SCANNING",
-    );
-    globalThis.fetch = async () =>
-      new Response(JSON.stringify({ clean: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    await runJob(db, cfg, "SCAN", "scan:" + file.id, { id: file.id });
     const scanned = await db.document.findUniqueOrThrow({
       where: { id: file.id },
     });
     assert.equal(scanned.status, "PENDING");
     assert.match(scanned.fileKey, /^private\//);
     assert.notEqual(scanned.fileKey, file.fileKey);
-    assert.deepEqual(Buffer.from(writes[0].Body), bytes);
+    assert.equal((await PDFDocument.load(writes[0].Body)).getPageCount(),1);assert.notDeepEqual(Buffer.from(writes[0].Body),bytes);
     assert.equal(
       (await agent.get("/files/" + file.id + "/download-url")).status,
       200,

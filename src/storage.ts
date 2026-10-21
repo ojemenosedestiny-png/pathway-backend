@@ -1,3 +1,4 @@
+import {imageTypes,processImageUpload} from './image-upload.js';
 import { Router } from "express";
 import { PrismaClient } from "@prisma/client";
 import {
@@ -47,7 +48,7 @@ export function fileRouter(db: PrismaClient, config: Config) {
               .min(1)
               .max(150)
               .regex(/^[\w .()-]+$/),
-            mime: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm"]),
+            mime: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp"]),
             size: z
               .number()
               .int()
@@ -73,6 +74,7 @@ export function fileRouter(db: PrismaClient, config: Config) {
             !p.permissions.write.includes("media")))
       )
         fail(403, "FORBIDDEN", "Public media requires content permissions.");
+      if(d.public&&!imageTypes.includes(d.mime))fail(422,"PUBLIC_IMAGE_ONLY","Public media must be a JPG, PNG or WebP image. Upload PDFs as private documents.");
       const { ownerId, ...fields } = d;
       if (ownerId && ownerId !== p.id) {
         if (
@@ -85,8 +87,8 @@ export function fileRouter(db: PrismaClient, config: Config) {
         if (!(await db.student.findUnique({ where: { userId: ownerId } })))
           fail(422, "STUDENT_REQUIRED", "Target owner must be a student.");
       }
-      const missing=[!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',!config.SCANNER_URL&&'SCANNER_URL',!config.SCANNER_TOKEN&&'SCANNER_TOKEN',d.public&&!config.PUBLIC_MEDIA_BASE&&'PUBLIC_MEDIA_BASE'].filter(Boolean);
-      if(missing.length)fail(503,"STORAGE_UNCONFIGURED",p.role==='ADMIN'?'Uploads are not configured on the backend Render service. Missing settings: '+missing.join(', ')+'. Configure storage and the real scanner, then redeploy.':'Photo and document uploads are temporarily unavailable. Please contact the school to complete upload setup. Your account is unaffected.');
+      const missing=[!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',d.public&&!config.PUBLIC_MEDIA_BASE&&'PUBLIC_MEDIA_BASE'].filter(Boolean);
+      if(missing.length)fail(503,"STORAGE_UNCONFIGURED",p.role==='ADMIN'?'Uploads are not configured on the backend Render service. Missing settings: '+missing.join(', ')+'. Configure storage, then redeploy.':'Photo and document uploads are temporarily unavailable. Please contact the school to complete upload setup. Your account is unaffected.');
       storage(config);
       const file = await transaction(db, async (tx) => {
         const item = await tx.document.create({
@@ -155,6 +157,10 @@ export function fileRouter(db: PrismaClient, config: Config) {
         },
       });
       if (!f) fail(404, "NOT_FOUND", "File not found.");
+      if(f.status!=="UPLOADING"){
+        if(f.status==='SCANNING')await processImageUpload(db,storage(config),config.S3_BUCKET!,f);
+        const current=await db.document.findUniqueOrThrow({where:{id:f.id}});res.status(202).json({id:f.id,status:current.status});return;
+      }
       const head = await storage(config).send(
         new HeadObjectCommand({ Bucket: config.S3_BUCKET, Key: f.fileKey }),
       );
@@ -177,7 +183,9 @@ export function fileRouter(db: PrismaClient, config: Config) {
             req.ip || "",
           );
       });
-      res.status(202).json({ id: f.id, status: "SCANNING" });
+      await processImageUpload(db,storage(config),config.S3_BUCKET!,{...f,status:'SCANNING'});
+      const processed=await db.document.findUniqueOrThrow({where:{id:f.id}});
+      res.status(202).json({ id: f.id, status: processed.status });
     }),
   );
   r.get(

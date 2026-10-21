@@ -1,3 +1,4 @@
+import {imageTypes,processImageUpload} from './image-upload.js';
 import { PrismaClient } from "@prisma/client";
 import { fileTypeFromBuffer } from "file-type";
 import { type Config, unseal, queue, transaction, fail, log } from "./core.js";
@@ -157,85 +158,10 @@ export async function runJob(
   if (kind === "SCAN") {
     const f = await db.document.findUniqueOrThrow({ where: { id: d.id } });
     if (f.status !== "SCANNING") return;
-    if (!config.SCANNER_URL || !config.SCANNER_TOKEN)
-      throw new Error("Malware scanner must be configured");
-    const client = storage(config);
-    const object = await client.send(
-      new GetObjectCommand({ Bucket: config.S3_BUCKET, Key: f.fileKey }),
-    );
-    if (object.ContentLength !== f.size) {
-      (object.Body as any)?.destroy?.();
-      await db.document.updateMany({
-        where: { id: f.id, status: "SCANNING" },
-        data: {
-          status: "QUARANTINED",
-          rejectionReason: "Uploaded object size changed.",
-        },
-      });
-      return;
+    if(![...imageTypes,'application/pdf'].includes(f.mime)){
+      await db.document.updateMany({where:{id:f.id,status:'SCANNING'},data:{status:'QUARANTINED',rejectionReason:'Unsupported format. Choose JPG, PNG, WebP or PDF.'}});return;
     }
-    const bytes = await object.Body!.transformToByteArray();
-    const detected = await fileTypeFromBuffer(bytes);
-    if (bytes.length !== f.size || detected?.mime !== f.mime) {
-      await db.document.updateMany({
-        where: { id: f.id, status: "SCANNING" },
-        data: {
-          status: "QUARANTINED",
-          rejectionReason: "File content does not match declared type.",
-        },
-      });
-      return;
-    }
-    const result = await fetch(config.SCANNER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + config.SCANNER_TOKEN,
-        "Content-Type": "application/octet-stream",
-      },
-      body: Buffer.from(bytes),
-      signal: AbortSignal.timeout(60000),
-    });
-    if (!result.ok) throw new Error("Scanner unavailable");
-    const verdict = (await result.json()) as any;
-    if (verdict.clean !== true) {
-      await db.document.updateMany({
-        where: { id: f.id, status: "SCANNING" },
-        data: {
-          status: "QUARANTINED",
-          rejectionReason: "Security scan rejected the file.",
-        },
-      });
-      return;
-    }
-    if (f.public && !config.PUBLIC_MEDIA_BASE)
-      throw new Error("Public media URL is not configured");
-    // Publish the exact bytes that were scanned to a different, server-only key.
-    // Replaying an unexpired upload URL can only rewrite quarantine, never an approved file.
-    const destination =
-      (f.public ? "public/" : "private/") +
-      f.id +
-      "/" +
-      encodeURIComponent(f.filename);
-    await client.send(
-      new PutObjectCommand({
-        Bucket: config.S3_BUCKET,
-        Key: destination,
-        Body: bytes,
-        ContentType: f.mime,
-        ContentLength: bytes.length,
-      }),
-    );
-    const updated = await db.document.updateMany({
-      where: { id: f.id, status: "SCANNING" },
-      data: { fileKey: destination, status: f.public ? "APPROVED" : "PENDING" },
-    });
-    if (!updated.count)
-      await client.send(
-        new DeleteObjectCommand({ Bucket: config.S3_BUCKET, Key: destination }),
-      );
-    await client.send(
-      new DeleteObjectCommand({ Bucket: config.S3_BUCKET, Key: f.fileKey }),
-    );
+    await processImageUpload(db,storage(config),config.S3_BUCKET!,f);
     return;
   }
   if (kind === "DELETE_FILE") {
