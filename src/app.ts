@@ -84,6 +84,7 @@ export function createApp(
     }),
   );
   app.get("/openapi.json", (_req, res) => res.json(openapi));
+  app.get('/public/fee-schedules',wrap(async(_req,res)=>res.json((await db.portalRecord.findMany({where:{kind:'FEE_SCHEDULE'},take:200})).map(row=>row.data))));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));
   app.use(
     wrap(async (req, _res, next) => {

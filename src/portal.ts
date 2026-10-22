@@ -1,4 +1,5 @@
 import {requirePreparation} from './trust-content.js';
+import {learningRouter} from './learning.js';
 import {lock} from "./database.js";
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
@@ -137,6 +138,7 @@ export function audienceWhere(
 export function portalRouter(db: PrismaClient, config: Config) {
   const r = Router();
   r.use(studentGuard);
+  r.use('/learning',learningRouter(db));
   const sid = (req: any) => req.principal!.studentId as string;
   r.get(
     "/profile",

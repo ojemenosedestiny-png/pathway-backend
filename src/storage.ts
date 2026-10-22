@@ -206,6 +206,7 @@ export function fileRouter(db: PrismaClient, config: Config) {
           (p.role === "ADMIN" &&
             (p.adminRole === "SUPER_ADMIN" ||
               p.permissions.read.includes("documents") ||
+              (p.permissions.read.includes("payments") && f.type === "BANK_PROOF") ||
               (p.permissions.read.includes("media") && f.public))));
       if (f && !permitted && p.studentId) {
         const student = await db.student.findUniqueOrThrow({

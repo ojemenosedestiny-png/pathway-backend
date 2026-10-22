@@ -1,4 +1,5 @@
 import {ensureAdmissionCollection} from './admissions.js';
+import {ensureLearningCollection} from './learning.js';
 import {createDatabase,databaseUrl,assertDatabaseReady,assertPhase2Ready} from "./database.js";
 import { PrismaClient } from "@prisma/client";
 import { runtimeConfiguration, log } from "./core.js";
@@ -13,6 +14,7 @@ await db.$connect();
 await assertDatabaseReady(db);
 await assertPhase2Ready(db);
 await ensureAdmissionCollection(db);
+await ensureLearningCollection(db);
 const server = createApp(db, config).listen(config.PORT, () =>
   log.info({ port: config.PORT }, "API listening"),
 );

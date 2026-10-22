@@ -2,18 +2,22 @@ import { MongoClient } from "mongodb";
 import { databaseUrl, setupMongoDatabase } from "./database.js";
 export const phase2MigrationKey = "platform-phase-2-v1";
 /** Read-only by default. Explicit application is additive and repeatable. */
-export async function migratePhase2(url = databaseUrl(), apply = false) {
+export async function migratePhase2(url = databaseUrl(), apply = false, onlyIfNeeded = false) {
   const client = new MongoClient(url, { serverSelectionTimeoutMS: 15000 });
   await client.connect();
   try {
     const db = client.db();
     const users = db.collection("User");
-    const missing = await users.countDocuments({
-      emailVerifiedAt: { $exists: false },
-    });
     const applied = await db
       .collection("SchemaMigration")
       .findOne({ _id: phase2MigrationKey } as any);
+    // Normal process restarts must not rebuild every index and scan collections.
+    // Explicit migration runs retain the existing repair/backfill behavior.
+    if (apply && onlyIfNeeded && applied?.result != null)
+      return { mode: "apply", alreadyApplied: true, skipped: true, usersBackfilled: 0 };
+    const missing = await users.countDocuments({
+      emailVerifiedAt: { $exists: false },
+    });
     if (!apply)
       return {
         mode: "dry-run",

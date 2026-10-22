@@ -543,6 +543,16 @@ model Setting {
  key String @id @map("_id")
  value Json
 }
+model PortalRecord {
+ id String @id @default(uuid()) @map("_id")
+ key String @unique
+ kind String
+ studentId String?
+ data Json
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([kind,studentId])
+}
 model IdCounter {
  key String @id @map("_id")
  nextNumber Int @default(1)
