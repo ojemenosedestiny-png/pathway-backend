@@ -166,9 +166,13 @@ export function fileRouter(db: PrismaClient, config: Config) {
         if(f.status==='SCANNING')await processImageUpload(db,storage(config),config.S3_BUCKET!,f);
         const current=await db.document.findUniqueOrThrow({where:{id:f.id}});res.status(202).json({id:f.id,status:current.status});return;
       }
-      const head = await storage(config).send(
-        new HeadObjectCommand({ Bucket: config.S3_BUCKET, Key: f.fileKey }),
-      );
+      const head = await storage(config)
+        .send(new HeadObjectCommand({ Bucket: config.S3_BUCKET, Key: f.fileKey }))
+        .catch((error: any) => {
+          if (error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404)
+            fail(409, "UPLOAD_MISSING", "The file never reached storage, so this upload cannot be finished. Upload the file again.");
+          throw error;
+        });
       if (head.ContentLength !== f.size || head.ContentType !== f.mime)
         fail(422, "FILE_MISMATCH", "Uploaded size or content type differs.");
       await transaction(db, async (tx) => {
@@ -222,7 +226,15 @@ export function fileRouter(db: PrismaClient, config: Config) {
       }
       if (!f || !permitted) fail(404, "NOT_FOUND", "File unavailable.");
       if (!["PENDING", "APPROVED", "REJECTED"].includes(f.status))
-        fail(409, "FILE_UNAVAILABLE", "File has not passed security scanning.");
+        fail(
+          409,
+          "FILE_UNAVAILABLE",
+          f.status === "UPLOADING"
+            ? "This upload never finished, so there is no checked file to download. Use “Finish upload” or ask for the file to be uploaded again."
+            : f.status === "SCANNING"
+              ? "This file is still being checked. Try again in a minute."
+              : "This file failed the format check (" + (f.rejectionReason || "invalid file") + ") and cannot be downloaded. Ask for a new copy.",
+        );
       await db.auditLog.create({
         data: {
           actorId: p.id,
