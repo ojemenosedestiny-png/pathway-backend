@@ -345,15 +345,14 @@ async function checkPassword(
 }
 export function authRouter(db: PrismaClient, config: Config) {
   const r = Router();
-  r.get("/csrf", (_req, res) => {
-    const nonce = random();
-    const token =
-      nonce +
-      "." +
-      crypto
-        .createHmac("sha256", config.JWT_SECRET)
-        .update(nonce)
-        .digest("hex");
+  r.get("/csrf", (req, res) => {
+    // Reuse a still-valid token so a second tab or module does not invalidate the token the first one holds.
+    const sign = (nonce: string) =>
+      crypto.createHmac("sha256", config.JWT_SECRET).update(nonce).digest("hex");
+    const existing = String(req.cookies?.csrf || "");
+    const [oldNonce, oldMac] = existing.split(".");
+    const nonce = oldNonce && oldMac && equal(oldMac, sign(oldNonce)) ? oldNonce : random();
+    const token = nonce + "." + sign(nonce);
     res.cookie("csrf", token, { ...cookies(config), maxAge: 86400000 });
     res.json({ csrfToken: token });
   });

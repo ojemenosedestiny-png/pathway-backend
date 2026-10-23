@@ -59,6 +59,7 @@ test('AI errors become clear staff messages', async () => {
  await assert.rejects(aiRespond({...config,OPENAI_API_KEY:undefined},request,reply({})),(e:any)=>e.code==='AI_NOT_CONFIGURED');
  await assert.rejects(aiRespond(config,request,reply({error:{message:'bad key'}},401)),(e:any)=>e.code==='AI_KEY_REJECTED');
  await assert.rejects(aiRespond(config,request,reply({error:{}},429)),(e:any)=>e.code==='AI_RATE_LIMIT');
+ await assert.rejects(aiRespond(config,request,reply({error:{code:'insufficient_quota',message:'You exceeded your current quota'}},429)),(e:any)=>e.code==='AI_NO_CREDIT'&&e.status===402);
  await assert.rejects(aiRespond(config,request,reply({status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[]})),(e:any)=>e.code==='AI_INCOMPLETE');
  await assert.rejects(aiRespond(config,request,reply({status:'completed',output:[{type:'message',content:[{type:'refusal',refusal:'no'}]}]})),(e:any)=>e.code==='AI_REFUSED');
  assert.equal(await aiRespond(config,request,reply(output('Summary: all good'))),'Summary: all good');

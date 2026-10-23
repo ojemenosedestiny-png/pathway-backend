@@ -522,6 +522,8 @@ model Thread {
  student Student @relation(fields:[studentId],references:[id])
  subject String
  messages Message[]
+ studentReadAt DateTime?
+ staffReadAt DateTime?
  createdAt DateTime @default(now())
 }
 model Message {

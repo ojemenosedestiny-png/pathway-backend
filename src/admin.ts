@@ -6,6 +6,7 @@ import {trustAdminRouter} from './trust-content.js';
 import {adminAdmissionsRouter} from './admissions.js';
 import {guardCatalogWrite,guardCatalogDelete} from "./catalog-integrity.js";
 import {lock} from "./database.js";
+import {unreadFor,markThreadRead} from './messages.js';
 import { Router } from "express";
 import { PrismaClient, Prisma, type Provider } from "@prisma/client";
 import { z } from "zod";
@@ -208,6 +209,37 @@ const delegate: Record<string, string> = {
 };
 const resourceModule = (resource: string) =>
   resource === "slots" ? "consultations" : resource;
+/**
+ * Room photographs must be image files from the school's own media storage, so a web page
+ * (for example a Pinterest pin) can never be published as a broken residence image.
+ */
+export function checkRoomPhotos(photos: unknown, config: Pick<Config, "PUBLIC_MEDIA_BASE">) {
+  if (photos === undefined || photos === null) return;
+  if (!Array.isArray(photos) || photos.length > 30)
+    fail(422, "ROOM_PHOTOS", "Room photographs must be a list of up to 30 images.");
+  const base = config.PUBLIC_MEDIA_BASE?.replace(/\/$/, "");
+  for (const photo of photos) {
+    const url = typeof photo === "string" ? photo : (photo as any)?.url;
+    let parsed: URL | undefined;
+    try {
+      parsed = new URL(String(url));
+    } catch {
+      /* reported below */
+    }
+    const fromMedia = base
+      ? String(url).startsWith(base + "/")
+      : /\.(jpe?g|png|webp|avif)$/i.test(parsed?.pathname || "");
+    if (!parsed || parsed.protocol !== "https:" || !fromMedia)
+      fail(
+        422,
+        "ROOM_PHOTO_SOURCE",
+        "Each room photograph must be uploaded to the school media library first. Links to other websites, such as Pinterest pages, cannot be used.",
+      );
+    const alt = typeof photo === "object" ? String((photo as any).alt ?? "") : "";
+    if (alt.length > 200)
+      fail(422, "ROOM_PHOTO_ALT", "Keep each photo description under 200 characters.");
+  }
+}
 export function adminRouter(
   db: PrismaClient,
   config: Config,
@@ -399,6 +431,7 @@ export function adminRouter(
       moduleGuard(mod, true),
       wrap(async (req, res) => {
         const data: any = parse(schema.strict(), req.body);
+        if (resource === "rooms") checkRoomPhotos(data.photos, config);
         if (
           (resource === "exams" && data.closesAt <= data.opensAt) ||
           (resource === "slots" && data.endsAt <= data.startsAt)
@@ -450,6 +483,8 @@ export function adminRouter(
           ? parse(z.string().max(150), req.params.id)
           : parse(idSchema, req.params.id);
         const data: any = parse(schema.partial().strict(), req.body);
+        if (resource === "rooms" && "photos" in data)
+          checkRoomPhotos(data.photos, config);
         delete data.key;
         if (resource === "content") data.updatedBy = actor(req);
         if (resource === "settings")
@@ -638,6 +673,32 @@ export function adminRouter(
         }),
       ),
     ),
+  );
+  r.get(
+    "/students/:id",
+    moduleGuard("students"),
+    wrap(async (req, res) => {
+      const item = await db.student.findUnique({
+        where: { id: parse(idSchema, req.params.id) },
+        include: {
+          payments: {
+            select: { reference: true, status: true, purpose: true },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          },
+          user: {
+            select: {
+              email: true,
+              phone: true,
+              status: true,
+              mustChangePassword: true,
+            },
+          },
+        },
+      });
+      if (!item) fail(404, "NOT_FOUND", "Student not found.");
+      res.json(item);
+    }),
   );
   r.patch(
     "/students/:id",
@@ -923,7 +984,21 @@ export function adminRouter(
             status: true,
             rejectionReason: true,
             createdAt: true,
+            // Staff identify the student from the authoritative ownership relation, never from the filename.
+            owner: {
+              select: {
+                student: {
+                  select: {
+                    id: true,
+                    studentId: true,
+                    firstName: true,
+                    lastName: true,
+                  },
+                },
+              },
+            },
           },
+          orderBy: { createdAt: "desc" },
           ...parse(pageSchema, req.query),
         }),
       ),
@@ -1634,10 +1709,43 @@ export function adminRouter(
     moduleGuard("messages"),
     wrap(async (req, res) =>
       res.json(
-        await db.thread.findMany({
-          include: { student: true, messages: true },
-          ...parse(pageSchema, req.query),
-        }),
+        (
+          await db.thread.findMany({
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  studentId: true,
+                  firstName: true,
+                  lastName: true,
+                  userId: true,
+                },
+              },
+              messages: { orderBy: { createdAt: "asc" } },
+            },
+            orderBy: { createdAt: "desc" },
+            ...parse(pageSchema, req.query),
+          })
+        ).map((thread) => ({
+          ...thread,
+          unread: unreadFor(thread, thread.staffReadAt, (authorId) =>
+            authorId === thread.student.userId,
+          ),
+        })),
+      ),
+    ),
+  );
+  r.post(
+    "/messages/:threadId/read",
+    moduleGuard("messages"),
+    wrap(async (req, res) =>
+      res.json(
+        await markThreadRead(
+          db,
+          parse(idSchema, req.params.threadId),
+          parse(z.object({ upTo: idSchema }).strict(), req.body).upTo,
+          "staffReadAt",
+        ),
       ),
     ),
   );
@@ -1657,6 +1765,10 @@ export function adminRouter(
           });
           const item = await tx.message.create({
             data: { threadId: thread.id, authorId: actor(req), body: d.body },
+          });
+          await tx.thread.update({
+            where: { id: thread.id },
+            data: { staffReadAt: item.createdAt },
           });
           await tx.notification.create({
             data: {

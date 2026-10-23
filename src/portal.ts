@@ -1,6 +1,7 @@
 import {requirePreparation} from './trust-content.js';
 import {learningRouter} from './learning.js';
 import {lock} from "./database.js";
+import {unreadFor,markThreadRead} from './messages.js';
 import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -612,11 +613,35 @@ export function portalRouter(db: PrismaClient, config: Config) {
     "/messages",
     wrap(async (req, res) =>
       res.json(
-        await db.thread.findMany({
-          where: { studentId: sid(req) },
-          include: { messages: { orderBy: { createdAt: "asc" } } },
-          ...parse(pageSchema, req.query),
-        }),
+        (
+          await db.thread.findMany({
+            where: { studentId: sid(req) },
+            include: { messages: { orderBy: { createdAt: "asc" } } },
+            orderBy: { createdAt: "desc" },
+            ...parse(pageSchema, req.query),
+          })
+        ).map(({ staffReadAt: _staffRead, ...thread }) => ({
+          ...thread,
+          unread: unreadFor(
+            thread,
+            thread.studentReadAt,
+            (authorId) => authorId !== req.principal!.id,
+          ),
+        })),
+      ),
+    ),
+  );
+  r.post(
+    "/messages/:threadId/read",
+    wrap(async (req, res) =>
+      res.json(
+        await markThreadRead(
+          db,
+          parse(idSchema, req.params.threadId),
+          parse(z.object({ upTo: idSchema }).strict(), req.body).upTo,
+          "studentReadAt",
+          sid(req),
+        ),
       ),
     ),
   );
@@ -641,11 +666,15 @@ export function portalRouter(db: PrismaClient, config: Config) {
             data: { studentId: sid(req), subject: d.subject },
           });
       if (!t) fail(404, "NOT_FOUND", "Thread unavailable.");
-      res.status(201).json(
-        await db.message.create({
-          data: { threadId: t.id, authorId: req.principal!.id, body: d.body },
-        }),
-      );
+      const message = await db.message.create({
+        data: { threadId: t.id, authorId: req.principal!.id, body: d.body },
+      });
+      // Writing in a thread means the student has seen everything before their message.
+      await db.thread.update({
+        where: { id: t.id },
+        data: { studentReadAt: message.createdAt },
+      });
+      res.status(201).json(message);
     }),
   );
   r.get(

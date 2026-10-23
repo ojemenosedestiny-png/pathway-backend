@@ -46,7 +46,7 @@ export async function schoolSnapshot(db:PrismaClient,now=new Date()){
   money:{paymentsByStatus:paymentCounts,verifiedNgnLast30Days:(revenue.reduce((total,row)=>total+BigInt(row.amountMinor),0n)/100n).toString(),activeFees:fees.length,activeFeesWithoutSchedule:fees.filter(fee=>!scheduled.has(fee.id)).length,bankDetailsPublished:Boolean((bank?.data as any)?.active),transferReceiptsAwaitingReview:proofPayments.filter(p=>p.status==='PENDING').length},
   admissionsWork:{documentsByStatus:documentCounts,documentsAwaitingReview:documentCounts.PENDING||0,visitorConsultationsByStatus:consultationCounts,newVisitorConsultations:consultationCounts.NEW||0},
   catalogue:{countries,activeUniversities:universities,activeCourses:courses,activeExams:exams},
-  communication:{noticesByStatus:counts(announcements as any),draftNoticesOlderThan3Days:staleDrafts,messageDeliveryByStatus:outboxCounts,failedDeliveries:outboxCounts.DEAD||0},
+  communication:{noticesByStatus:counts(announcements as any),draftNoticesOlderThan3Days:staleDrafts,messageDeliveryByStatus:outboxCounts,failedDeliveries:outboxCounts.DEAD||0,skippedDeliveries:outboxCounts.SKIPPED||0},
   learning:{mockExams:mocks.length,publishedMocks:mocks.filter(m=>m.data.published).length,mocksOpenNow:mocks.filter(m=>m.data.published&&new Date(m.data.opensAt).getTime()<=t&&t<=new Date(m.data.closesAt).getTime()).length,
    closedMocksWithUnreleasedResults:mocks.filter(m=>new Date(m.data.closesAt).getTime()<t&&!m.data.releaseResults&&submitted.some(a=>a.data.mockId===mockIds(m))).length,
    attemptsStarted:attempts.length,attemptsSubmitted:submitted.length,attemptsSubmittedLast7Days:recent.length,
@@ -61,7 +61,8 @@ export type Snapshot=Awaited<ReturnType<typeof schoolSnapshot>>;
 export function healthChecks(s:Snapshot,aiReady:boolean):Check[]{
  const checks:Check[]=[];const add=(id:string,severity:Severity,title:string,detail:string,module:string)=>checks.push({id,severity,title,detail,module});
  const plural=(n:number,word:string)=>`${n} ${word}${n===1?'':'s'}`;
- if(s.communication.failedDeliveries)add('delivery','critical','Messages are failing to send',`${plural(s.communication.failedDeliveries,'email or SMS job')} stopped after repeated failures. Check the email and SMS provider settings.`,'audit');
+ if(s.communication.failedDeliveries)add('delivery','critical','Messages are failing to send',`${plural(s.communication.failedDeliveries,'email or SMS job')} stopped after repeated failures. Open the delivery problems list below to see each reason before retrying.`,'assistant');
+ if(s.communication.skippedDeliveries)add('delivery-setup','warning','A message channel is not set up',`${plural(s.communication.skippedDeliveries,'message')} could not be sent because email, SMS or WhatsApp credentials are missing on the server. They were not retried.`,'assistant');
  if(!s.money.bankDetailsPublished)add('bank','warning','Bank details are not published','Students cannot pay school fees by transfer until the school account is published.','bank-details');
  if(s.money.transferReceiptsAwaitingReview)add('receipts','warning','Transfer receipts are waiting',`${plural(s.money.transferReceiptsAwaitingReview,'student transfer receipt')} need checking against the bank statement.`,'bank-details');
  if(!s.money.activeFees)add('fees','warning','No fees are published','Students have no fees to view or pay.','fees');
@@ -88,10 +89,20 @@ You receive a JSON snapshot of aggregate school records and a list of automated 
 - When the owner asks a specific question, answer it directly first.`;
 const briefingSchema=z.object({question:z.string().trim().max(600).optional(),history:z.array(z.object({question:z.string().max(600),answer:z.string().max(4000)}).strict()).max(6).default([])}).strict();
 
+const retryable=(job:{kind:string;status:string;createdAt:Date},payload:string)=>job.status==='DEAD'&&['EMAIL','SMS','WHATSAPP'].includes(job.kind)&&Boolean(payload)&&Date.now()-job.createdAt.getTime()<14*86400000;
 export function assistantRouter(db:PrismaClient,config:Config,send?:typeof fetch){
  const r=Router();
  r.use((req,_res,next)=>{if(req.principal?.adminRole!=='SUPER_ADMIN')fail(403,'OWNER_REQUIRED','The workspace assistant is available to the school owner.');next();});
  r.get('/',wrap(async(_req,res)=>{const snapshot=await schoolSnapshot(db);res.json({aiConfigured:aiConfigured(config),model:aiConfigured(config)?config.OPENAI_MODEL:null,snapshot,checks:healthChecks(snapshot,aiConfigured(config))});}));
+ // Delivery diagnostics: the reason each email/SMS job stopped, without recipients or message content.
+ r.get('/deliveries',wrap(async(_req,res)=>{const rows=await db.outbox.findMany({where:{OR:[{status:{in:['DEAD','SKIPPED']}},{status:'PENDING',attempts:{gt:0}}]},orderBy:{createdAt:'desc'},take:50,select:{id:true,kind:true,status:true,attempts:true,lastError:true,createdAt:true,runAt:true,payload:true}});
+  res.json(rows.map(({payload,...row})=>({...row,retryable:retryable(row,payload)})));}));
+ r.post('/deliveries/:id/retry',wrap(async(req,res)=>{const id=parse(z.string().uuid(),req.params.id);await rate(db,'delivery-retry:'+req.principal!.id,20,3600);
+  const result=await transaction(db,async tx=>{const job=await tx.outbox.findUnique({where:{id}});if(!job)fail(404,'NOT_FOUND','Delivery job not found.');if(!retryable(job,job.payload))fail(409,'NOT_RETRYABLE','Only email, SMS or WhatsApp jobs that failed permanently in the last 14 days can be retried. Older messages are not resent automatically.');
+   // Only this job, only from DEAD: the provider idempotency key (the job key) prevents a duplicate if the provider had in fact accepted it.
+   const updated=await tx.outbox.updateMany({where:{id,status:'DEAD'},data:{status:'PENDING',attempts:0,runAt:new Date(),lockedAt:null}});if(!updated.count)fail(409,'NOT_RETRYABLE','This job is no longer waiting for a retry.');
+   await audit(tx,req.principal!.id,'DELIVERY_RETRY','Outbox',id,req.ip||'',{status:job.status,attempts:job.attempts},{status:'PENDING'});return {id,status:'PENDING'};});
+  res.json(result);}));
  r.post('/briefing',wrap(async(req,res)=>{
   const {question,history}=parse(briefingSchema,req.body);
   await rate(db,'assistant:'+req.principal!.id,30,3600);

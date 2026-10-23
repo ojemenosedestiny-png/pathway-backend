@@ -14,9 +14,23 @@ const escape = (s: unknown) =>
         c
       ]!,
   );
+/** A channel without credentials cannot succeed by retrying; such jobs are recorded as SKIPPED, not failed. */
+export class DeliveryNotConfigured extends Error {}
+/** Provider errors can echo the recipient; staff diagnostics keep the reason but never the address or number. */
+export function redactDeliveryError(message: string) {
+  return message
+    .replace(/[^\s@<>"']+@[^\s@<>"']+\.[a-z]{2,}/gi, "[email]")
+    .replace(/\+?\d[\d\s-]{6,}\d/g, "[number]")
+    .slice(0, 300);
+}
+async function providerDetail(response: Response) {
+  const body: any = await response.json().catch(() => null);
+  const detail = body?.message || body?.error?.message || body?.error || "";
+  return typeof detail === "string" && detail ? ": " + detail : "";
+}
 async function email(config: Config, key: string, d: any) {
   if (!config.RESEND_API_KEY || !config.EMAIL_FROM)
-    throw new Error("Email delivery is not configured");
+    throw new DeliveryNotConfigured("Email delivery is not configured (RESEND_API_KEY or EMAIL_FROM is missing)");
   const subject =
     d.template === 'student-ready'?'Your NewworldPathway Student ID':d.template === 'verify-email'?'Verify your NewworldPathway email':d.template==='applicant-reset'?'Reset your NewworldPathway password':d.template === "credentials"
       ? "Set up your Pathway account"
@@ -45,7 +59,9 @@ async function email(config: Config, key: string, d: any) {
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok)
-    throw new Error("Email provider rejected delivery: " + response.status);
+    throw new Error(
+      "Email provider rejected delivery (" + response.status + ")" + (await providerDetail(response)),
+    );
 }
 export async function schedule(db: PrismaClient, config: Config) {
   await transaction(db, async (tx) => {
@@ -102,7 +118,7 @@ export async function runJob(
   if (kind === "EMAIL") return email(config, key, d);
   if (kind === "SMS") {
     if (!config.TERMII_API_KEY || !config.TERMII_SENDER)
-      throw new Error("SMS delivery is not configured");
+      throw new DeliveryNotConfigured("SMS delivery is not configured (TERMII_API_KEY or TERMII_SENDER is missing)");
     const r = await fetch("https://v3.api.termii.com/api/sms/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -116,7 +132,8 @@ export async function runJob(
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (!r.ok) throw new Error("SMS delivery failed");
+    if (!r.ok)
+      throw new Error("SMS provider rejected delivery (" + r.status + ")" + (await providerDetail(r)));
     return;
   }
   if (kind === "WHATSAPP") {
@@ -125,7 +142,7 @@ export async function runJob(
       !config.WHATSAPP_PHONE_NUMBER_ID ||
       !config.WHATSAPP_NOTICE_TEMPLATE
     )
-      throw new Error("WhatsApp approved template is not configured");
+      throw new DeliveryNotConfigured("WhatsApp approved template is not configured");
     const response = await fetch(
       `https://graph.facebook.com/${config.WHATSAPP_GRAPH_VERSION}/${config.WHATSAPP_PHONE_NUMBER_ID}/messages`,
       {
@@ -308,22 +325,23 @@ export async function workOnce(db: PrismaClient, config: Config) {
         data: { status: "DONE", lockedAt: null, payload: "" },
       });
     } catch (error) {
-      const dead = job.attempts >= 8;
+      const skipped = error instanceof DeliveryNotConfigured;
+      const dead = !skipped && job.attempts >= 8;
+      const reason = redactDeliveryError(
+        error instanceof Error ? error.message : "Delivery failed",
+      );
       await db.outbox.update({
         where: { id: job.id },
         data: {
-          status: dead ? "DEAD" : "PENDING",
+          status: skipped ? "SKIPPED" : dead ? "DEAD" : "PENDING",
           lockedAt: null,
           runAt: new Date(
             Date.now() + Math.min(3600, 2 ** job.attempts * 15) * 1000,
           ),
-          lastError:
-            error instanceof Error
-              ? error.message.slice(0, 200)
-              : "Delivery failed",
+          lastError: reason,
         },
       });
-      log.warn({ jobId: job.id, kind: job.kind, dead }, "Job failed");
+      log.warn({ jobId: job.id, kind: job.kind, dead, skipped, reason }, "Job failed");
     }
   }
   return jobs.length;

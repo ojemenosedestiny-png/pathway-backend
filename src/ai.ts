@@ -21,7 +21,11 @@ export async function aiRespond(config:Config,request:AiRequest,send:AiFetch=fet
  const data:any=await response.json().catch(()=>null);
  if(!response.ok){
   if(response.status===401)fail(502,'AI_KEY_REJECTED','OpenAI rejected the API key. Check OPENAI_API_KEY on the backend service.');
-  if(response.status===429)fail(429,'AI_RATE_LIMIT','The AI service is busy or the OpenAI account has no remaining credit. Try again later.');
+  // OpenAI uses 429 for both: insufficient_quota means no credit (retrying cannot help); otherwise it is a temporary rate limit.
+  const code=String(data?.error?.code||data?.error?.type||'');
+  if(response.status===429&&/insufficient_quota|billing/i.test(code))fail(402,'AI_NO_CREDIT','The OpenAI account has no remaining credit or has reached its spending limit. The owner adds credit at platform.openai.com under Billing; until then, enter questions manually.');
+  if(response.status===429)fail(429,'AI_RATE_LIMIT','The AI service is busy right now. Wait a minute, then try again. Your questions and edits are kept.');
+  if(response.status===400&&/file|pdf|invalid_image|unsupported/i.test(String(data?.error?.message||'')))fail(422,'AI_INVALID_FILE','The AI service could not read this PDF. Check it opens normally and is not password-protected, or enter the questions manually.');
   fail(502,'AI_FAILED','The AI service could not complete this request'+(data?.error?.message?': '+String(data.error.message).slice(0,200):'.'));
  }
  const parts=(data?.output||[]).filter((item:any)=>item.type==='message').flatMap((item:any)=>item.content||[]);
