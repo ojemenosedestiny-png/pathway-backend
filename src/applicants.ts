@@ -2,6 +2,7 @@ import { Router } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import argon2 from "argon2";
 import { z } from "zod";
+import { bankFor } from "./learning.js";
 import {
   type Config,
   wrap,
@@ -194,6 +195,10 @@ export function applicantRouter(db: PrismaClient, config: Config) {
       next(error);
     }
   });
+  r.get(
+    "/bank",
+    wrap(async (_req, res) => res.json(await bankFor(db, "APPLICATION"))),
+  );
   r.get(
     "/profile",
     wrap(async (req, res) => {

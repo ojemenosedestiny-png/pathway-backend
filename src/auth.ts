@@ -34,6 +34,7 @@ export interface Principal {
   permissions: { read: string[]; write: string[] };
   sessionId: string;
   mfaAt?: Date;
+  name?: string;
 }
 declare global {
   namespace Express {
@@ -42,7 +43,7 @@ declare global {
     }
   }
 }
-const passwordSchema = z.string().min(12).max(128);
+export const passwordSchema = z.string().min(12).max(128);
 export const defaultPermissions: Record<
   AdminRole,
   { read: string[]; write: string[] }
@@ -163,6 +164,11 @@ export function authentication(
       permissions,
       sessionId: session.id,
       mfaAt: session.mfaAt || undefined,
+      name:
+        user.admin?.name ||
+        (user.student
+          ? [user.student.firstName, user.student.lastName].join(" ")
+          : undefined),
     };
     if (Date.now() - session.lastSeen.getTime() > 30000)
       await db.session.update({
