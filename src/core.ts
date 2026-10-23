@@ -245,6 +245,20 @@ export async function rate(
   });
   if(counter.count>max)fail(429,'RATE_LIMIT','Too many requests. Please try again later.');
 }
+/**
+ * In-process fixed-window limiter for the high-volume per-request API limit. It avoids a database
+ * transaction on every call; security-sensitive limits (logins, resets, payments) keep using rate().
+ */
+export function memoryRate(max:number,seconds:number,now=()=>Date.now()){
+  const buckets=new Map<string,{count:number;resetAt:number}>();let swept=now();
+  return (key:string)=>{
+    const time=now();
+    if(time-swept>seconds*1000){for(const [k,bucket] of buckets)if(bucket.resetAt<=time)buckets.delete(k);swept=time;}
+    let bucket=buckets.get(key);
+    if(!bucket||bucket.resetAt<=time){bucket={count:0,resetAt:time+seconds*1000};buckets.set(key,bucket);}
+    if(++bucket.count>max)fail(429,'RATE_LIMIT','Too many requests. Please try again later.');
+  };
+}
 export function jsonSafe(value: unknown) {
   return JSON.parse(
     JSON.stringify(value, (_k, v) =>

@@ -17,7 +17,7 @@ import {
   jsonSafe,
   pageSchema,
   parse,
-  rate,
+  memoryRate,
 } from "./core.js";
 import { authRouter, authentication, csrf } from "./auth.js";
 import { paymentRouter, webhook } from "./payments.js";
@@ -86,9 +86,10 @@ export function createApp(
   app.get("/openapi.json", (_req, res) => res.json(openapi));
   app.get('/public/fee-schedules',wrap(async(_req,res)=>res.json((await db.portalRecord.findMany({where:{kind:'FEE_SCHEDULE'},take:200})).map(row=>row.data))));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));
+  const apiLimit = memoryRate(600, 60);
   app.use(
     wrap(async (req, _res, next) => {
-      await rate(db, "api:" + req.ip, 600, 60);
+      apiLimit("api:" + req.ip);
       next();
     }),
     csrf(config),
