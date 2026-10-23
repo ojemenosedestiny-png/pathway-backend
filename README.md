@@ -79,3 +79,13 @@ GET `/portal/export` exports the student's own information without credentials/s
 Run `ops/backup.sh` daily at 02:00 UTC using a restricted PGPASSFILE and PGHOST/PGPORT/PGDATABASE/PGUSER environment. Send dumps to an encrypted, access-controlled backup destination separate from the database host. Schedule with `0 2 * * * /opt/pathway/backend/ops/backup.sh`; the scheduler must inject credentials and BACKUP_DIR. Retain e.g. 7 daily/4 weekly/12 monthly snapshots according to the approved policy; alert on nonzero exit and missing daily backups. For managed PostgreSQL enable automated snapshots and point-in-time recovery. Restore a recent dump into an isolated database monthly with `pg_restore --no-owner --exit-on-error --dbname=<restore-db> <dump>` and run readiness and reconciliation checks. A backup is not verified until restored.
 
 See [API-CONTRACT.md](API-CONTRACT.md) and [FRONTEND-INTEGRATION.md](FRONTEND-INTEGRATION.md) for exact integration conventions and current deployment dependencies.
+
+## AI assistant and mock paper import (OpenAI)
+
+Optional. Set `OPENAI_API_KEY` on the API service (and optionally `OPENAI_MODEL`, default `gpt-5-mini`). Without a key the owner's **AI assistant** page still shows automatic health checks and key figures; written briefings and PDF import return a clear "not connected" message.
+
+- `GET /admin/assistant` (owner only) returns aggregate counts and rule-based health checks. `POST /admin/assistant/briefing` sends those counts, never names, emails or payment references, to OpenAI and returns a plain-text briefing. The assistant is read-only; staff act through the normal permission-checked pages. Limited to 30 requests per hour per owner and audited as `AI_BRIEFING`.
+- `POST /admin/learning/mocks/import` (exams write permission, `Content-Type: application/pdf`, max 15 MB) asks OpenAI to read a question paper and returns draft questions and warnings. Nothing is saved: staff review every question and answer, choose any answer the PDF did not state, then save. Limited to 20 imports per hour per staff member and audited as `MOCK_PDF_IMPORTED`.
+- Requests use the Responses API with `store:false`. Costs are billed to the OpenAI account that owns the key.
+
+Mock examinations: each student's attempt stores its own random question order and A–D option order (and a random subset when **Questions per student** is set). Answers autosave; a submission after the deadline is marked on the answers saved before time ran out. Questions, duration and questions-per-student lock after the first attempt.

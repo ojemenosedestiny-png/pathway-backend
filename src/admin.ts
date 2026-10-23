@@ -1,5 +1,6 @@
 import {adminConsultationsRouter} from './consultation-requests.js';
 import {learningRouter} from './learning.js';
+import {assistantRouter} from './assistant.js';
 import {trustAdminRouter} from './trust-content.js';
 import {adminAdmissionsRouter} from './admissions.js';
 import {guardCatalogWrite,guardCatalogDelete} from "./catalog-integrity.js";
@@ -232,8 +233,9 @@ export function adminRouter(
         "Sign in with your authenticator again.",
       );
   };
+  r.use('/assistant',assistantRouter(db,config));
   r.use(adminAdmissionsRouter(db,config));
-  r.use('/learning',learningRouter(db,true));
+  r.use('/learning',learningRouter(db,true,config));
   r.use(adminConsultationsRouter(db));
   r.use(admissionPolicyRouter(db));
   r.get(

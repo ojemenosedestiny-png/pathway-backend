@@ -65,6 +65,12 @@ export const configuration = z.object({
   ),
   SCANNER_TOKEN: z.string().optional(),
   TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
+  // Optional: enables the staff AI assistant and mock-paper PDF import.
+  OPENAI_API_KEY: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(20).optional(),
+  ),
+  OPENAI_MODEL: z.string().min(1).default("gpt-5-mini"),
 });
 export type Config = z.infer<typeof configuration>;
 // Owner credentials are only consumed by the seed script, never by API/worker startup.
