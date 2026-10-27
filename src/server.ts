@@ -1,5 +1,6 @@
 import {ensureAdmissionCollection} from './admissions.js';
 import {ensureLearningCollection} from './learning.js';
+import {ensureUkUniversities} from './catalogue-seed.js';
 import {createDatabase,databaseUrl,assertDatabaseReady,assertPhase2Ready} from "./database.js";
 import { PrismaClient } from "@prisma/client";
 import { runtimeConfiguration, log } from "./core.js";
@@ -15,6 +16,8 @@ await assertDatabaseReady(db);
 await assertPhase2Ready(db);
 await ensureAdmissionCollection(db);
 await ensureLearningCollection(db);
+// Never block the API on catalogue content: a failure here is logged and retried on the next start.
+await ensureUkUniversities(db).catch(error=>log.error({type:error instanceof Error?error.name:'Unknown'},'Catalogue destinations not added'));
 const server = createApp(db, config).listen(config.PORT, () =>
   log.info({ port: config.PORT }, "API listening"),
 );

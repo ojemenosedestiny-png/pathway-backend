@@ -24,7 +24,7 @@ export async function provisionAdmissionStudent(tx:Prisma.TransactionClient,conf
  return {studentId:user.student!.studentId};
 }
 
-export const admissionProgrammes=['Cambridge Curriculum','Nigerian Curriculum','Cambridge International Examination - Year 8','Checkpoint (Cambridge)','IGCSE - JSS 3','BECE - ERC / NECO - JSS 3','SSCE - WAEC','SSCE - NECO','SAT','HMB (Pre-Degree)'] as const;
+export const admissionProgrammes=['Cambridge Curriculum','Nigerian Curriculum','Cambridge International Examination - Year 8','Checkpoint (Cambridge)','IGCSE - JSS 3','BECE - ERC / NECO - JSS 3','SSCE - WAEC','SSCE - NECO','SAT','HMB (Pre-Degree)','Cambridge International AS & A Level'] as const;
 export const admissionSchema=z.object({
  firstName:z.string().trim().min(2).max(80),lastName:z.string().trim().min(2).max(80),
  email:z.string().trim().email().max(254).transform(value=>value.toLowerCase()),
