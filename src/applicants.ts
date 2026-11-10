@@ -3,6 +3,7 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import argon2 from "argon2";
 import { z } from "zod";
 import { bankFor } from "./learning.js";
+import { ssceApplicantRoutes } from "./ssce.js";
 import {
   type Config,
   wrap,
@@ -288,5 +289,6 @@ export function applicantRouter(db: PrismaClient, config: Config) {
       res.json({ saved: true });
     }),
   );
+  ssceApplicantRoutes(r, db);
   return r;
 }

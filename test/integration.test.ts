@@ -925,6 +925,8 @@ test('Phase 2: verified applicants promote atomically, retaining their password 
  const fee=await db.fee.create({data:{name:'Application fee',purpose:'REGISTRATION',amountMinor:1500000n,currency:'NGN'}});
  await db.setting.upsert({where:{key:'applicationFeePolicy'},create:{key:'applicationFeePolicy',value:{feeId:fee.id}},update:{value:{feeId:fee.id}}});
  assert.equal((await post(agent,token,'/applicant/invoices/application',{amountMinor:'1'})).status,400);
+ const blocked=await post(agent,token,'/applicant/invoices/application',{});assert.equal(blocked.status,422);assert.equal(blocked.body.error.code,'REGISTRATION_FORM_REQUIRED');
+ const form=await agent.put('/applicant/ssce-form').set('Origin',config.FRONTEND_ORIGIN).set('X-CSRF-Token',token).send({examBody:'WAEC',surname:'Test',firstName:'Ada',middleName:'',dateOfBirth:'2009-03-14',stateOfOrigin:'Kogi',lga:'Lokoja',gender:'Female',nin:'12345678901',electives:['Biology','Chemistry','Physics','Economics','Government'],phone:'+2348000000011',signature:'Ada Test',declaration:true});assert.equal(form.status,200);assert.match(form.body.formNumber,/^NWE-SSCE-\d{4}-0001$/);
  const created=await post(agent,token,'/applicant/invoices/application',{});assert.equal(created.status,201);assert.equal(created.body.amountMinor,'1500000');
  const again=await post(agent,token,'/applicant/invoices/application',{});assert.equal(again.body.id,created.body.id);
  const stranger=request.agent(app),strangerCsrf=await csrf(stranger);

@@ -1,6 +1,7 @@
 import {adminConsultationsRouter} from './consultation-requests.js';
 import {learningRouter} from './learning.js';
 import {assistantRouter} from './assistant.js';
+import {ssceAdminRouter} from './ssce.js';
 import {accountRouter} from './account.js';
 import {trustAdminRouter} from './trust-content.js';
 import {adminAdmissionsRouter} from './admissions.js';
@@ -267,6 +268,7 @@ export function adminRouter(
       );
   };
   r.use('/assistant',assistantRouter(db,config));
+  r.use('/ssce',ssceAdminRouter(db));
   r.use('/account',accountRouter(db));
   r.use(adminAdmissionsRouter(db,config));
   r.use('/learning',learningRouter(db,true,config));

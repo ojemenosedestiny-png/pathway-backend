@@ -88,6 +88,13 @@ export async function createInvoice(
     });
     if (existing) return existing;
     if (kind === "APPLICATION") {
+      // The WAEC/NECO registration form is what the application fee pays for.
+      if (!(await tx.portalRecord.findUnique({ where: { key: "SSCE_FORM:" + userId } })))
+        fail(
+          422,
+          "REGISTRATION_FORM_REQUIRED",
+          "Complete your WAEC/NECO registration form before requesting the invoice.",
+        );
       if (!user.applicant?.firstName || !user.applicant.lastName || !user.phone)
         fail(
           422,
