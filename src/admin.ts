@@ -1,5 +1,6 @@
 import {adminConsultationsRouter} from './consultation-requests.js';
 import {learningRouter} from './learning.js';
+import {staffMockRouter} from './mock-exams.js';
 import {assistantRouter} from './assistant.js';
 import {ssceAdminRouter} from './ssce.js';
 import {studentAccountsRouter} from './student-accounts.js';
@@ -273,6 +274,7 @@ export function adminRouter(
   r.use('/student-accounts',studentAccountsRouter(db,config));
   r.use('/account',accountRouter(db));
   r.use(adminAdmissionsRouter(db,config));
+  r.use('/learning',staffMockRouter(db,config));
   r.use('/learning',learningRouter(db,true,config));
   r.use(adminConsultationsRouter(db));
   r.use(admissionPolicyRouter(db));
