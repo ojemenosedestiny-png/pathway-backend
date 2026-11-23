@@ -350,16 +350,21 @@ test("strict CSRF, account locking and cross-student ownership", async () => {
     ).status,
     403,
   );
-  for (let i = 0; i < 5; i++)
-    assert.equal(
-      (
-        await post(agent, token, "/auth/student/login", {
-          studentId: s.studentId,
-          password: "wrong",
-        })
-      ).status,
-      401,
-    );
+  // Only failures count: many successful sign-ins from one lab address are never throttled.
+  for (let i = 0; i < 40; i++)
+    assert.equal((await post(agent, token, "/auth/student/login", { studentId: s.studentId, password: "Correct-secret-77!" })).status, 200);
+  for (let i = 0; i < 7; i++)
+    assert.equal((await post(agent, token, "/auth/student/login", { studentId: s.studentId, password: "wrong" })).status, 401);
+  assert.equal((await db.user.findUniqueOrThrow({ where: { id: s.userId } })).lockedUntil, null, "not locked after 7 wrong passwords");
+  assert.equal(
+    (
+      await post(agent, token, "/auth/student/login", {
+        studentId: s.studentId,
+        password: "wrong",
+      })
+    ).status,
+    401,
+  );
   assert.ok(
     (await db.user.findUniqueOrThrow({ where: { id: s.userId } }))
       .lockedUntil! > new Date(),
@@ -373,6 +378,20 @@ test("strict CSRF, account locking and cross-student ownership", async () => {
     ).status,
     401,
   );
+});
+test("student first sign-in with a staff password must choose a new password", async () => {
+  const s = await student();
+  await db.user.update({ where: { id: s.userId }, data: { passwordHash: await argon2.hash("Emerald-4827", { type: argon2.argon2id }), mustChangePassword: true } });
+  const agent = request.agent(app), token = await csrf(agent);
+  const first = await post(agent, token, "/auth/student/login", { studentId: s.studentId, password: "Emerald-4827" });
+  assert.equal(first.status, 200); assert.equal(first.body.requiresPasswordChange, true); assert.equal(first.body.challenge.length, 64);
+  assert.equal((await agent.get("/portal/profile")).status, 401, "no portal access before the change");
+  assert.equal((await post(agent, token, "/auth/student/first-password", { challenge: first.body.challenge, newPassword: "short" })).status, 400);
+  assert.equal((await post(agent, token, "/auth/student/first-password", { challenge: first.body.challenge, newPassword: "My-own-secret-2026" })).status, 200);
+  assert.equal((await agent.get("/portal/profile")).status, 200, "signed in after choosing a password");
+  assert.equal((await post(agent, token, "/auth/student/first-password", { challenge: first.body.challenge, newPassword: "Another-secret-2026" })).status, 401, "challenge cannot be reused");
+  const other = request.agent(app);
+  assert.equal((await post(other, await csrf(other), "/auth/student/login", { studentId: s.studentId, password: "Emerald-4827" })).status, 401, "the staff password no longer works");
 });
 test("admin initial password change and TOTP required; backup code single-use; role limits", async () => {
   const admin = await db.user.create({

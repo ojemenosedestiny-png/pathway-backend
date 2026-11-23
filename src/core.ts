@@ -237,14 +237,26 @@ export async function rate(
   max: number,
   seconds: number,
 ) {
-  const counter=await transaction(db,async tx=>{
+  const counter=await bump(db,key,seconds);
+  if(counter.count>max)fail(429,'RATE_LIMIT','Too many requests. Please try again later.');
+}
+function bump(db:PrismaClient,key:string,seconds:number){
+  return transaction(db,async tx=>{
     const id=digest(key),now=new Date();
     const current=await tx.rateBucket.findUnique({where:{key:id}});
     if(!current)return tx.rateBucket.create({data:{key:id,count:1,expiresAt:new Date(Date.now()+seconds*1000)}});
     return tx.rateBucket.update({where:{key:id},data:current.expiresAt<=now?{count:1,expiresAt:new Date(Date.now()+seconds*1000)}:{count:{increment:1}}});
   });
-  if(counter.count>max)fail(429,'RATE_LIMIT','Too many requests. Please try again later.');
 }
+/**
+ * Failure-only limits for sign-in: a whole computer lab shares one internet address, so successful
+ * sign-ins never count. Check before trying a password; record only when it fails.
+ */
+export async function failureLimit(db:PrismaClient,key:string,max:number){
+  const bucket=await db.rateBucket.findUnique({where:{key:digest(key)}});
+  if(bucket&&bucket.expiresAt>new Date()&&bucket.count>=max)fail(429,'RATE_LIMIT','Too many wrong passwords. Wait 15 minutes, then try again.');
+}
+export async function recordFailure(db:PrismaClient,key:string,seconds:number){await bump(db,key,seconds);}
 /**
  * In-process fixed-window limiter for the high-volume per-request API limit. It avoids a database
  * transaction on every call; security-sensitive limits (logins, resets, payments) keep using rate().

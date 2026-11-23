@@ -25,6 +25,8 @@ import {
   audit,
   queue,
   rate,
+  failureLimit,
+  recordFailure,
 } from "./core.js";
 export interface Principal {
   id: string;
@@ -282,6 +284,8 @@ export async function createPasswordLink(
     hours: kind === "SET" ? 24 : 1,
   });
 }
+/** Wrong passwords allowed before an account locks for 15 minutes. */
+export const LOCK_AFTER = 8;
 async function checkPassword(
   db: PrismaClient,
   identifier: string,
@@ -289,8 +293,11 @@ async function checkPassword(
   password: string,
   ip: string,
 ) {
-  await rate(db, `login-ip:${ip}`, 30, 900);
-  await rate(db, `login:${kind}:${identifier.toLowerCase()}`, 10, 900);
+  // Only failed attempts count. One address may be a whole computer lab, so its allowance is large;
+  // a single account locks for 15 minutes after 8 wrong passwords.
+  const ipKey = `login-fail-ip:${ip}`, idKey = `login-fail:${kind}:${identifier.toLowerCase()}`;
+  await failureLimit(db, ipKey, 200);
+  await failureLimit(db, idKey, LOCK_AFTER);
   const user =
     kind === "ADMIN"
       ? await db.user.findUnique({
@@ -305,7 +312,7 @@ async function checkPassword(
     ? await argon2.verify(user.passwordHash, password)
     : (await argon2.hash(password, { type: argon2.argon2id }), false);
   const result = await transaction(db, async (tx) => {
-    if (!user) return null;
+    if (!user) return "FAILED" as const;
     await lock(tx,"User:"+(user.id));
     const current = await tx.user.findUniqueOrThrow({ where: { id: user.id } });
     if (
@@ -321,13 +328,13 @@ async function checkPassword(
       await tx.user.update({
         where: { id: current.id },
         data: {
-          failedLoginCount: count >= 5 ? 0 : count,
-          lockedUntil: count >= 5 ? new Date(Date.now() + 15 * 60000) : null,
+          failedLoginCount: count >= LOCK_AFTER ? 0 : count,
+          lockedUntil: count >= LOCK_AFTER ? new Date(Date.now() + 15 * 60000) : null,
         },
       });
-      if (kind === "ADMIN")
-        await audit(tx, current.id, "LOGIN_FAILED", "User", current.id, ip);
-      return null;
+      if (kind === "ADMIN" || count >= LOCK_AFTER)
+        await audit(tx, current.id, count >= LOCK_AFTER ? "ACCOUNT_LOCKED" : "LOGIN_FAILED", "User", current.id, ip);
+      return "FAILED" as const;
     }
     await tx.user.update({
       where: { id: current.id },
@@ -335,12 +342,17 @@ async function checkPassword(
     });
     return current;
   });
-  if (!result)
+  if (!result || result === "FAILED") {
+    if (result === "FAILED" || !valid) {
+      await recordFailure(db, ipKey, 900);
+      await recordFailure(db, idKey, 900);
+    }
     fail(
       401,
       "INVALID_CREDENTIALS",
-      "Credentials are incorrect or access is temporarily unavailable.",
+      "Those details are not right, or this account is locked. After 8 wrong passwords an account is locked for 15 minutes.",
     );
+  }
   return result;
 }
 export function authRouter(db: PrismaClient, config: Config) {
@@ -376,12 +388,15 @@ export function authRouter(db: PrismaClient, config: Config) {
         data.password,
         req.ip || "",
       );
-      if (user.mustChangePassword)
-        fail(
-          403,
-          "SET_PASSWORD_REQUIRED",
-          "Complete the emailed password setup link.",
-        );
+      // First sign-in with a password from staff: the student must choose their own before anything else.
+      if (user.mustChangePassword) {
+        const raw = random();
+        await db.authChallenge.create({
+          data: { userId: user.id, hash: digest(raw), version: user.sessionVersion, expiresAt: new Date(Date.now() + 10 * 60000) },
+        });
+        res.json({ requiresPasswordChange: true, challenge: raw });
+        return;
+      }
       await issue(db, config, user, res, data.rememberMe);
       if(user.role==='APPLICANT'){const applicant=await db.applicant.findUniqueOrThrow({where:{userId:user.id}});res.json({role:'APPLICANT',applicant:{applicantNumber:applicant.applicantNumber,emailVerified:!!user.emailVerifiedAt}});return;}
       const student = await db.student.findUniqueOrThrow({
@@ -497,6 +512,28 @@ export function authRouter(db: PrismaClient, config: Config) {
           req.ip || "",
         );
       });
+      res.json({ changed: true });
+    }),
+  );
+  r.post(
+    "/student/first-password",
+    wrap(async (req, res) => {
+      const d = parse(z.object({ challenge: z.string().length(64), newPassword: passwordSchema }).strict(), req.body);
+      const c = await challenge(d.challenge);
+      if (!["STUDENT", "APPLICANT"].includes(c.user.role) || !c.user.mustChangePassword)
+        fail(409, "ALREADY_SET", "Your password has already been changed. Sign in with it.");
+      const passwordHash = await argon2.hash(d.newPassword, { type: argon2.argon2id });
+      const user = await transaction(db, async (tx) => {
+        const changed = await tx.user.updateMany({
+          where: { id: c.userId, mustChangePassword: true, sessionVersion: c.version },
+          data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
+        });
+        if (!changed.count) fail(409, "ALREADY_SET", "Your password has already been changed. Sign in with it.");
+        await tx.authChallenge.update({ where: { id: c.id }, data: { usedAt: new Date() } });
+        await audit(tx, c.userId, "INITIAL_PASSWORD_CHANGED", "User", c.userId, req.ip || "");
+        return tx.user.findUniqueOrThrow({ where: { id: c.userId } });
+      });
+      await issue(db, config, user, res, false);
       res.json({ changed: true });
     }),
   );

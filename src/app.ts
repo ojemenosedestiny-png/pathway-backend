@@ -18,6 +18,7 @@ import {
   pageSchema,
   parse,
   memoryRate,
+  digest,
 } from "./core.js";
 import { authRouter, authentication, csrf } from "./auth.js";
 import { paymentRouter, webhook } from "./payments.js";
@@ -86,10 +87,14 @@ export function createApp(
   app.get("/openapi.json", (_req, res) => res.json(openapi));
   app.get('/public/fee-schedules',wrap(async(_req,res)=>res.json((await db.portalRecord.findMany({where:{kind:'FEE_SCHEDULE'},take:200})).map(row=>row.data))));
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapi));
-  const apiLimit = memoryRate(600, 60);
+  // Per-session limit, so a computer lab sharing one internet address is not throttled as one user,
+  // plus a high per-address ceiling so rotating fake session cookies cannot escape limiting.
+  const apiLimit = memoryRate(600, 60), addressLimit = memoryRate(30000, 60);
   app.use(
     wrap(async (req, _res, next) => {
-      apiLimit("api:" + req.ip);
+      addressLimit("ip:" + req.ip);
+      const session = req.cookies?.access || req.cookies?.refresh;
+      apiLimit(session ? "session:" + digest(String(session)).slice(0, 24) : "api:" + req.ip);
       next();
     }),
     csrf(config),
