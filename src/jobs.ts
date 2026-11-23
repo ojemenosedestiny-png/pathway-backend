@@ -29,6 +29,9 @@ async function providerDetail(response: Response) {
   return typeof detail === "string" && detail ? ": " + detail : "";
 }
 async function email(config: Config, key: string, d: any) {
+  // Students added by staff without an email have a reserved, undeliverable address: nothing to send.
+  if (String(d.to || "").toLowerCase().endsWith("@students.invalid"))
+    throw new DeliveryNotConfigured("No email address on file for this student");
   if (!config.RESEND_API_KEY || !config.EMAIL_FROM)
     throw new DeliveryNotConfigured("Email delivery is not configured (RESEND_API_KEY or EMAIL_FROM is missing)");
   const subject =

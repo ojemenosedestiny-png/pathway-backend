@@ -146,6 +146,8 @@ model Student {
  countryOfResidence String?
  guardian Json @default("{}")
  cohort String?
+ programme String?
+ photo String?
  journeyStage String @default("Registered")
  milestones Json @default("[]")
  createdAt DateTime @default(now())

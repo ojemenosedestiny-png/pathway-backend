@@ -2,6 +2,7 @@ import {adminConsultationsRouter} from './consultation-requests.js';
 import {learningRouter} from './learning.js';
 import {assistantRouter} from './assistant.js';
 import {ssceAdminRouter} from './ssce.js';
+import {studentAccountsRouter} from './student-accounts.js';
 import {accountRouter} from './account.js';
 import {trustAdminRouter} from './trust-content.js';
 import {adminAdmissionsRouter} from './admissions.js';
@@ -269,6 +270,7 @@ export function adminRouter(
   };
   r.use('/assistant',assistantRouter(db,config));
   r.use('/ssce',ssceAdminRouter(db));
+  r.use('/student-accounts',studentAccountsRouter(db,config));
   r.use('/account',accountRouter(db));
   r.use(adminAdmissionsRouter(db,config));
   r.use('/learning',learningRouter(db,true,config));
@@ -713,6 +715,7 @@ export function adminRouter(
             firstName: z.string().min(1).max(80).optional(),
             lastName: z.string().max(80).optional(),
             cohort: z.string().max(80).optional(),
+            programme: z.string().max(100).optional(),
             journeyStage: z.string().max(80).optional(),
             milestones: z
               .array(
