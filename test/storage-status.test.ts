@@ -4,7 +4,7 @@ import express from 'express';
 import request from 'supertest';
 import {fileRouter} from '../src/storage.js';
 const id='00000000-0000-4000-8000-000000000001';
-function app(file:any,principal:any={id:'owner',role:'STUDENT'},config:any={PUBLIC_MEDIA_BASE:'https://media.example.invalid/'}){
+function app(file:any,principal:any={id:'owner',role:'STUDENT'},config:any={PUBLIC_MEDIA_BASE:'https://media.example.invalid/',FRONTEND_ORIGIN:'https://school.example/'}){
  const app=express();app.use(express.json());app.use((req,_res,next)=>{req.principal=principal;next();});
  app.use(fileRouter({document:{findUnique:async()=>file}} as any,config));
  app.use((error:any,_req:any,res:any,_next:any)=>res.status(error.status||(error.name==='ZodError'?400:500)).json({code:error.code}));return app;
@@ -13,7 +13,7 @@ test('only approved public media exposes its permanent URL',async()=>{
  const file={id,ownerId:'owner',public:true,status:'SCANNING',fileKey:'quarantine/secret',mime:'image/png'};
  assert.equal((await request(app(file)).get('/'+id+'/status')).body.url,null);
  const approved={...file,status:'APPROVED',fileKey:'public/'+id+'/photo.png'};
- const result=await request(app(approved)).get('/'+id+'/status');assert.equal(result.status,200);assert.equal(result.body.url,'https://media.example.invalid/'+approved.fileKey);assert.equal(result.body.fileKey,undefined);
+ const result=await request(app(approved)).get('/'+id+'/status');assert.equal(result.status,200);assert.equal(result.body.url,'https://school.example/backend-api/media/'+approved.fileKey,'served by the school site, not an external media host');assert.equal(result.body.fileKey,undefined);
  assert.equal((await request(app({...approved,public:false})).get('/'+id+'/status')).body.url,null);
 });
 test('another student cannot inspect uploads; content editors can inspect public media',async()=>{

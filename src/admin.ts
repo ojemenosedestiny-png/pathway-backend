@@ -1,4 +1,5 @@
 import {adminConsultationsRouter} from './consultation-requests.js';
+import { mediaBase } from "./media.js";
 import {learningRouter} from './learning.js';
 import {staffMockRouter} from './mock-exams.js';
 import {staffFormsRouter} from './forms.js';
@@ -217,7 +218,7 @@ const resourceModule = (resource: string) =>
  * Room photographs must be image files from the school's own media storage, so a web page
  * (for example a Pinterest pin) can never be published as a broken residence image.
  */
-export function checkRoomPhotos(photos: unknown, config: Pick<Config, "PUBLIC_MEDIA_BASE">) {
+export function checkRoomPhotos(photos: unknown, config: Pick<Config, "PUBLIC_MEDIA_BASE"> & Partial<Pick<Config, "FRONTEND_ORIGIN">>) {
   if (photos === undefined || photos === null) return;
   if (!Array.isArray(photos) || photos.length > 30)
     fail(422, "ROOM_PHOTOS", "Room photographs must be a list of up to 30 images.");
@@ -230,9 +231,10 @@ export function checkRoomPhotos(photos: unknown, config: Pick<Config, "PUBLIC_ME
     } catch {
       /* reported below */
     }
-    const fromMedia = base
+    const own = config.FRONTEND_ORIGIN ? mediaBase({ FRONTEND_ORIGIN: config.FRONTEND_ORIGIN }) : "";
+    const fromMedia = (own && String(url).startsWith(own + "/public/")) || (base
       ? String(url).startsWith(base + "/")
-      : /\.(jpe?g|png|webp|avif)$/i.test(parsed?.pathname || "");
+      : /\.(jpe?g|png|webp|avif)$/i.test(parsed?.pathname || ""));
     if (!parsed || parsed.protocol !== "https:" || !fromMedia)
       fail(
         422,

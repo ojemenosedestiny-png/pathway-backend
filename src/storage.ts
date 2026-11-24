@@ -11,6 +11,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { z } from "zod";
 import { audienceWhere } from "./portal.js";
+import { publicMediaUrl } from "./media.js";
 import {
   type Config,
   wrap,
@@ -92,7 +93,7 @@ export function fileRouter(db: PrismaClient, config: Config) {
         if (!(await db.student.findUnique({ where: { userId: ownerId } })))
           fail(422, "STUDENT_REQUIRED", "Target owner must be a student.");
       }
-      const missing=[config.S3_REGION==='auto'&&!config.S3_ENDPOINT&&'S3_ENDPOINT',!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',d.public&&!config.PUBLIC_MEDIA_BASE&&'PUBLIC_MEDIA_BASE'].filter(Boolean);
+      const missing=[config.S3_REGION==='auto'&&!config.S3_ENDPOINT&&'S3_ENDPOINT',!config.S3_BUCKET&&'S3_BUCKET',!config.S3_ACCESS_KEY&&'S3_ACCESS_KEY',!config.S3_SECRET_KEY&&'S3_SECRET_KEY',false].filter(Boolean);
       if(missing.length)fail(503,"STORAGE_UNCONFIGURED",p.role==='ADMIN'?'Uploads are not configured on the backend Render service. Missing settings: '+missing.join(', ')+'. Configure storage, then redeploy.':'Photo and document uploads are temporarily unavailable. Please contact the school to complete upload setup. Your account is unaffected.');
       storage(config);
       const file = await transaction(db, async (tx) => {
@@ -139,8 +140,7 @@ export function fileRouter(db: PrismaClient, config: Config) {
     const p = req.principal!;
     const mediaAccess = p.role === "ADMIN" && (p.adminRole === "SUPER_ADMIN" || p.permissions.read.includes("media") || p.permissions.write.includes("media"));
     if (!f || (f.ownerId !== p.id && !(mediaAccess && f.public))) fail(404, "NOT_FOUND", "File unavailable.");
-    const url = f.public && f.status === "APPROVED" && f.fileKey.startsWith("public/") && config.PUBLIC_MEDIA_BASE
-      ? config.PUBLIC_MEDIA_BASE.replace(/\/$/, "") + "/" + f.fileKey : null;
+    const url = f.public && f.status === "APPROVED" && f.fileKey.startsWith("public/") ? publicMediaUrl(config, f.fileKey) : null;
     res.json({ id: f.id, filename: f.filename, mime: f.mime, status: f.status, url });
   }));
   r.post(

@@ -1,4 +1,5 @@
 import {publicConsultationsRouter} from './consultation-requests.js';
+import { mediaRouter } from "./media.js";
 import {trustPublicRouter} from './trust-content.js';
 import {publicAdmissionsRouter} from './admissions.js';
 import express from "express";
@@ -103,6 +104,7 @@ export function createApp(
   app.use("/auth", authRouter(db, config));
   app.use('/applicant/invoices',authentication(db,config),invoiceRouter(db,config));
   app.use('/applicant',authentication(db,config),applicantRouter(db,config));
+  app.use("/media", mediaRouter(db, config));
   app.use("/public", trustPublicRouter(db));
   app.use("/public", publicAdmissionsRouter(db));
   app.use("/public", publicConsultationsRouter(db));
