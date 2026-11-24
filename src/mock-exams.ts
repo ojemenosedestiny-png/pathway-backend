@@ -5,7 +5,8 @@ import ExcelJS from "exceljs";
 import { wrap, parse, fail, audit, transaction, rate, type Config } from "./core.js";
 import { moduleGuard, studentGuard } from "./auth.js";
 import { lock } from "./database.js";
-import { drawPaper, paperOf, paperQuestions, markPaper, normalisedAnswers, importMockPdf } from "./learning.js";
+import { pdfLines, questionsFromText, rowsFromPdfQuestions, type PdfQuestion } from "./pdf-questions.js";
+import { drawPaper, paperOf, paperQuestions, markPaper, normalisedAnswers } from "./learning.js";
 
 /**
  * Mock examinations. Stored as PortalRecords: MOCK:<id>, one ATTEMPT:<mock>:<student> per student
@@ -143,6 +144,26 @@ export function questionsFromRows(rows: string[][]): SheetQuestion[] {
       if (parsed.success) question = parsed.data; else problems.push(...new Set(parsed.error.issues.map((x) => x.message)));
     }
     return { row: i + 2, question, problems, warnings, source };
+  });
+}
+
+/**
+ * PDF questions get the same checks as spreadsheet rows. A student copy has no answers: such a question
+ * still comes in with no answer chosen, and the editor will not save the exam until one is ticked.
+ */
+export function checkPdfQuestions(questions: PdfQuestion[]) {
+  const rows = rowsFromPdfQuestions(questions);
+  return questionsFromRows(rows).map((c, i) => {
+    const q = questions[i];
+    let { question, warnings } = c;
+    let problems = [...c.problems, ...q.notes, ...(q.options.length > 8 ? ["More than eight choices were found."] : [])];
+    if (!q.answer) {
+      const trial = questionsFromRows([rows[0], rows[i + 1].map((v, k) => (k === 9 ? "A" : v))])[0];
+      problems = problems.filter((p) => p !== "The answer letter is missing.");
+      if (!problems.length && trial.question) { question = { ...trial.question, answer: null as unknown as number }; warnings = [...trial.warnings, "No answer in the PDF: tick the correct answer in the editor."]; }
+    }
+    if (/\b(diagram|figure|fig\.|graph|shown|chart|table below)\b/i.test(q.prompt)) warnings = [...warnings, "Mentions a diagram: add the picture in the editor and check the question text."];
+    return { ...c, row: q.number, problems, warnings, question: problems.length ? null : question };
   });
 }
 
@@ -334,22 +355,23 @@ export function staffMockRouter(db: PrismaClient, config?: Config) {
     });
     res.json(saved);
   }));
-  r.post("/mocks/import", moduleGuard("exams", true), express.raw({ type: "application/pdf", limit: "15mb" }), wrap(async (req, res) => {
-    if (!config) fail(503, "AI_NOT_CONFIGURED", "PDF import is not available.");
-    if (!Buffer.isBuffer(req.body)) fail(415, "NOT_PDF", "Upload a PDF question paper.");
-    await rate(db, "mock-import:" + req.principal!.id, 20, 3600);
-    const result = await importMockPdf(config, req.body);
-    await transaction(db, (tx) => audit(tx, req.principal!.id, "MOCK_PDF_IMPORTED", "PortalRecord", "mock-import", req.ip || "", undefined, { questions: result.questions.length, bytes: req.body.length }));
-    res.json(result);
-  }));
-  r.post("/mocks/import-sheet", moduleGuard("exams", true), express.raw({ type: () => true, limit: "5mb" }), wrap(async (req, res) => {
-    if (!Buffer.isBuffer(req.body) || !req.body.length) fail(415, "NO_FILE", "Choose an Excel (.xlsx) or CSV file.");
+  r.post("/mocks/import-sheet", moduleGuard("exams", true), express.raw({ type: () => true, limit: "15mb" }), wrap(async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) fail(415, "NO_FILE", "Choose a PDF, Excel (.xlsx) or CSV file.");
     await rate(db, "mock-sheet:" + req.principal!.id, 60, 3600);
+    if (req.body.subarray(0, 5).toString("latin1") === "%PDF-") {
+      const { questions, skipped } = questionsFromText(await pdfLines(req.body));
+      if (!questions.length) fail(422, "PDF_NO_QUESTIONS", 'No numbered questions were found. Number each question "1.", "2." and start each choice with "A.", "B.", then try again.');
+      if (questions.length > 500) fail(422, "SHEET_TOO_LONG", "Import at most 500 questions at a time.");
+      const checked = checkPdfQuestions(questions);
+      res.json({ kind: "pdf", rows: checked, ready: checked.filter((c) => c.question).length, skipped: skipped.slice(0, 20) });
+      return;
+    }
+    if (req.body.length > 5 * 1024 * 1024) fail(413, "FILE_TOO_LARGE", "Excel and CSV files must be 5 MB or smaller.");
     let rows: string[][];
     try { rows = await sheetRows(req.body); } catch (error: any) { if (error?.status) throw error; fail(422, "SHEET_UNREADABLE", "This file could not be read. Save it as .xlsx or CSV and try again."); }
     if (rows.length > 501) fail(422, "SHEET_TOO_LONG", "Import at most 500 questions at a time.");
     const checked = questionsFromRows(rows);
-    res.json({ rows: checked, ready: checked.filter((c) => c.question).length });
+    res.json({ kind: "sheet", rows: checked, ready: checked.filter((c) => c.question).length });
   }));
   r.get("/mocks/template.xlsx", moduleGuard("exams"), wrap(async (_req, res) => {
     const book = new ExcelJS.Workbook();

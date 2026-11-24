@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {drawPaper,paperOf,paperQuestions,gradePaper,importMockPdf} from '../src/learning.js';
+import {drawPaper,paperOf,paperQuestions,gradePaper} from '../src/learning.js';
 import {aiRespond} from '../src/ai.js';
 import {healthChecks} from '../src/assistant.js';
 
@@ -8,7 +8,6 @@ const questions=Array.from({length:10},(_,q)=>({prompt:'Question '+q,options:['A
 const config:any={OPENAI_API_KEY:'sk-test-0000000000000000000000',OPENAI_MODEL:'gpt-5-mini'};
 const reply=(body:unknown,status=200)=>(async()=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}})) as unknown as typeof fetch;
 const output=(text:string)=>({status:'completed',output:[{type:'reasoning'},{type:'message',content:[{type:'output_text',text}]}]});
-const pdf=Buffer.from('%PDF-1.7 test paper');
 
 test('each paper is a complete permutation with shuffled options', () => {
  const paper=drawPaper(questions);
@@ -38,20 +37,6 @@ test('attempts from before shuffling keep the original order and marking', () =>
  const paper=paperOf({answers:[]},questions);
  assert.deepEqual(paper.order,questions.map((_,i)=>i));
  assert.equal(gradePaper(questions,paper,questions.map(q=>q.answer)),10);
-});
-
-test('PDF import returns reviewable questions, flags missing answers and never trusts bad indexes', async () => {
- const extracted={questions:[{prompt:'2 + 2 = ?',options:['3','4','5','6'],answer:1,explanation:''},{prompt:'Capital of Nigeria?',options:['Lagos','Abuja','Kano','Ibadan'],answer:null,explanation:''},{prompt:'Bad index',options:['x','y'],answer:7,explanation:''},{prompt:'Too few options',options:['only'],answer:0,explanation:''}],warnings:['Question 9 needs a diagram.']};
- const result=await importMockPdf(config,pdf,reply(output(JSON.stringify(extracted))));
- assert.equal(result.questions.length,3);
- assert.equal(result.questions[0].answer,1);assert.equal(result.questions[1].answer,null);assert.equal(result.questions[2].answer,null);
- assert.ok(result.warnings.some(w=>w.includes('diagram')));assert.ok(result.warnings.some(w=>w.includes('fewer than two options')));assert.ok(result.warnings.some(w=>w.includes('2 questions have no answer')));
-});
-
-test('PDF import rejects files that are not PDFs before calling the AI', async () => {
- let called=false;const send=(async()=>{called=true;return new Response('{}');}) as unknown as typeof fetch;
- await assert.rejects(importMockPdf(config,Buffer.from('not a pdf'),send),(e:any)=>e.code==='NOT_PDF');
- assert.equal(called,false);
 });
 
 test('AI errors become clear staff messages', async () => {

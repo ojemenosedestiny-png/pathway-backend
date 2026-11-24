@@ -77,35 +77,6 @@ export const bankKey=(purpose:BankPurpose)=>purpose==='GENERAL'?'bank':'bank:'+p
 /** The active account for a purpose, falling back to the school fees account when that purpose has none. */
 export async function bankFor(db:PrismaClient,purpose:BankPurpose){for(const candidate of purpose==='GENERAL'?['GENERAL' as const]:[purpose,'GENERAL' as const]){const data=(await db.portalRecord.findUnique({where:{key:bankKey(candidate)}}))?.data as any;if(data?.active)return {...data,purpose:candidate};}return null;}
 const answersSchema=z.object({answers:z.array(z.number().int().min(-1).max(5)).max(100)}).strict();
-/** Schema handed to the AI so a mock paper PDF comes back as reviewable draft questions. */
-const importSchema={type:'object',additionalProperties:false,required:['questions','warnings'],properties:{questions:{type:'array',items:{type:'object',additionalProperties:false,required:['prompt','options','answer','explanation'],properties:{prompt:{type:'string'},options:{type:'array',items:{type:'string'}},answer:{type:['integer','null']},explanation:{type:'string'}}}},warnings:{type:'array',items:{type:'string'}}}};
-const importInstructions=`You convert a school examination paper (PDF) into structured objective questions for a timed mock examination.
-Rules:
-- Extract every multiple-choice question in the order it appears. Copy the question text faithfully; do not rewrite, simplify or add content.
-- options: the answer choices in their original order, WITHOUT the leading letter or number (for "A. 12" return "12"). Most papers have A-D.
-- answer: the zero-based index of the correct option (A=0, B=1, C=2, D=3) taken ONLY from an answer key, marking scheme or marked answer in the document. If the document does not state the answer, return null. Never guess.
-- explanation: an explanation printed in the document, otherwise an empty string.
-- Write mathematical and scientific notation as readable plain text (x^2, H2O, sqrt(3)).
-- Skip instructions, cover pages and theory/essay questions.
-- warnings: short notes for the teacher about anything uncertain: unreadable text, questions that depend on a diagram or table you could not reproduce, missing answers, or anything you skipped.`;
-export async function importMockPdf(config:Config,pdf:Buffer,send?:typeof fetch){
- if(pdf.length<5||pdf.subarray(0,5).toString('latin1')!=='%PDF-')fail(415,'NOT_PDF','Upload a PDF question paper.');
- const reply=await aiRespond(config,{instructions:importInstructions,content:[{type:'input_text',text:'Extract the objective questions and answers from this examination paper.'},{type:'input_file',filename:'mock-paper.pdf',file_data:'data:application/pdf;base64,'+pdf.toString('base64')}],schema:{name:'mock_paper',schema:importSchema},maxOutputTokens:32000,timeoutMs:110000},send);
- let parsed:any;try{parsed=JSON.parse(reply);}catch{fail(502,'AI_FORMAT','The AI service returned an unreadable result. Try again.');}
- const warnings:string[]=(Array.isArray(parsed?.warnings)?parsed.warnings:[]).map((w:unknown)=>String(w).slice(0,300)).slice(0,30);
- const questions:any[]=[];
- for(const [index,q] of (Array.isArray(parsed?.questions)?parsed.questions:[]).entries()){
-  const prompt=String(q?.prompt||'').trim().slice(0,3000);const options=(Array.isArray(q?.options)?q.options:[]).map((o:unknown)=>String(o).trim().slice(0,3000)).filter(Boolean);
-  if(!prompt||options.length<2){warnings.push(`Question ${index+1} was skipped because it has fewer than two options.`);continue;}
-  if(options.length>6){warnings.push(`Question ${index+1} has more than six options; only the first six were kept.`);options.length=6;}
-  const answer=Number.isInteger(q?.answer)&&q.answer>=0&&q.answer<options.length?q.answer:null;
-  questions.push({prompt,options,answer,explanation:String(q?.explanation||'').trim().slice(0,1500)});
- }
- if(questions.length>100){warnings.push(`The paper has ${questions.length} questions; only the first 100 were imported. Split it into two mocks.`);questions.length=100;}
- const missing=questions.filter(q=>q.answer===null).length;if(missing)warnings.push(`${missing} question${missing===1?' has':'s have'} no answer in the PDF. Set the correct option before publishing.`);
- if(!questions.length)fail(422,'NO_QUESTIONS','No multiple-choice questions were found in this PDF. Check that it is a readable objective paper.');
- return {questions,warnings};
-}
 export function learningRouter(db:PrismaClient,staff=false,config?:Config){
  const r=Router();if(!staff)r.use(studentGuard);
  const sid=(req:any)=>req.principal.studentId as string;
