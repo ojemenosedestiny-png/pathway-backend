@@ -23,8 +23,11 @@ export async function aiRespond(config:Config,request:AiRequest,send:AiFetch=fet
   if(response.status===401)fail(502,'AI_KEY_REJECTED','OpenAI rejected the API key. Check OPENAI_API_KEY on the backend service.');
   // OpenAI uses 429 for both: insufficient_quota means no credit (retrying cannot help); otherwise it is a temporary rate limit.
   const code=String(data?.error?.code||data?.error?.type||'');
-  if(response.status===429&&/insufficient_quota|billing/i.test(code))fail(402,'AI_NO_CREDIT','The OpenAI account has no remaining credit or has reached its spending limit. The owner adds credit at platform.openai.com under Billing; until then, enter questions manually.');
-  if(response.status===429)fail(429,'AI_RATE_LIMIT','The AI service is busy right now. Wait a minute, then try again. Your questions and edits are kept.');
+  const detail=String(data?.error?.message||'').replace(/sk-[\w-]+/g,'[key]').replace(/org-\w+/g,'[organisation]').slice(0,240);
+  if(response.status===429&&(/insufficient_quota|billing/i.test(code)||/exceeded your current quota/i.test(detail)))fail(402,'AI_NO_CREDIT','The OpenAI account has no remaining credit or has reached its spending limit. The owner adds credit at platform.openai.com under Billing; until then, enter questions manually.');
+  // A paper bigger than the account's tokens-per-minute allowance is refused every time: waiting does not help.
+  if(response.status===429&&/request too large|tokens per min|TPM/i.test(detail))fail(413,'AI_TOO_LARGE','This PDF is too long for your OpenAI account to read in one go (its per-minute limit). Split it into smaller PDFs of about 10 to 15 questions, or use the Excel or CSV import.'+(detail?' OpenAI said: '+detail:''));
+  if(response.status===429)fail(429,'AI_RATE_LIMIT','The AI service is busy right now. Wait a minute, then try again. Your questions and edits are kept.'+(detail?' OpenAI said: '+detail:''));
   if(response.status===400&&/file|pdf|invalid_image|unsupported/i.test(String(data?.error?.message||'')))fail(422,'AI_INVALID_FILE','The AI service could not read this PDF. Check it opens normally and is not password-protected, or enter the questions manually.');
   fail(502,'AI_FAILED','The AI service could not complete this request'+(data?.error?.message?': '+String(data.error.message).slice(0,200):'.'));
  }
