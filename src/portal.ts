@@ -2,6 +2,7 @@ import {requirePreparation} from './trust-content.js';
 import {learningRouter} from './learning.js';
 import {studentMockRouter} from './mock-exams.js';
 import {studentFormsRouter} from './forms.js';
+import {studentProfileRouter} from './portal-home.js';
 import {lock} from "./database.js";
 import {unreadFor,markThreadRead} from './messages.js';
 import { Router } from "express";
@@ -143,6 +144,7 @@ export function portalRouter(db: PrismaClient, config: Config) {
   r.use(studentGuard);
   r.use('/learning',studentMockRouter(db));
   r.use('/forms',studentFormsRouter(db));
+  r.use(studentProfileRouter(db,config));
   r.use('/learning',learningRouter(db));
   const sid = (req: any) => req.principal!.studentId as string;
   r.get(

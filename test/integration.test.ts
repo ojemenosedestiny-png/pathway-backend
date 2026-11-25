@@ -1034,3 +1034,21 @@ test("forms: draft, submit with own photo only, one submission, students see onl
   assert.equal(theirView.status, "NOT_STARTED"); assert.notEqual(theirView.answers.fullName, "Ada Obi");
   assert.equal(await db.portalRecord.count({ where: { kind: "FORM_SUBMISSION", studentId: a.id } }), 1);
 });
+
+test("profile: students change their own password and can only use their own photo", async () => {
+  const [a, b] = await Promise.all([student(), student()]);
+  await db.user.update({ where: { id: a.userId }, data: { passwordHash: await argon2.hash("Profile-secret-2026!"), mustChangePassword: false } });
+  const theirs = await db.document.create({ data: { ownerId: b.userId, type: "PASSPORT", filename: "b.jpg", mime: "image/jpeg", size: 10, fileKey: "test/" + random(), status: "PENDING" } });
+  const mine = await db.document.create({ data: { ownerId: a.userId, type: "PASSPORT", filename: "a.jpg", mime: "image/jpeg", size: 10, fileKey: "test/" + random(), status: "PENDING" } });
+  const agent = request.agent(app), token = await csrf(agent);
+  assert.equal((await post(agent, token, "/auth/student/login", { studentId: a.studentId, password: "Profile-secret-2026!" })).status, 200);
+  const put = (url: string, body: object) => agent.put(url).set("Origin", config.FRONTEND_ORIGIN).set("X-CSRF-Token", token).send(body);
+  assert.equal((await put("/portal/profile/photo", { documentId: theirs.id })).status, 422);
+  assert.equal((await put("/portal/profile/photo", { documentId: mine.id })).status, 200);
+  assert.equal((await db.student.findUniqueOrThrow({ where: { id: a.id } })).photo, mine.id);
+  assert.equal((await post(agent, token, "/portal/password", { currentPassword: "wrong-password-123", newPassword: "Brand-new-secret-2026" })).status, 400);
+  assert.equal((await post(agent, token, "/portal/password", { currentPassword: "Profile-secret-2026!", newPassword: "Brand-new-secret-2026" })).status, 200);
+  assert.equal((await agent.get("/portal/profile")).status, 200, "this device stays signed in");
+  const fresh = request.agent(app), t2 = await csrf(fresh);
+  assert.equal((await post(fresh, t2, "/auth/student/login", { studentId: a.studentId, password: "Brand-new-secret-2026" })).status, 200);
+});

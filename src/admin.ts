@@ -3,6 +3,7 @@ import { mediaBase } from "./media.js";
 import {learningRouter} from './learning.js';
 import {staffMockRouter} from './mock-exams.js';
 import {staffFormsRouter} from './forms.js';
+import {staffSummaryRouter} from './portal-home.js';
 import {assistantRouter} from './assistant.js';
 import {ssceAdminRouter} from './ssce.js';
 import {studentAccountsRouter} from './student-accounts.js';
@@ -279,6 +280,7 @@ export function adminRouter(
   r.use(adminAdmissionsRouter(db,config));
   r.use('/learning',staffMockRouter(db,config));
   r.use('/forms',staffFormsRouter(db,config));
+  r.use('/portal-summary',staffSummaryRouter(db));
   r.use('/learning',learningRouter(db,true,config));
   r.use(adminConsultationsRouter(db));
   r.use(admissionPolicyRouter(db));
